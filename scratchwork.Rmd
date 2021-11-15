@@ -1,0 +1,74 @@
+---
+title: "scratchwork"
+author: "Lillian Clark"
+date: "11/3/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+family <- read_csv("data/31115615.csv")
+relig <- read_csv("data/31088702.csv")
+
+load("data/37692-0001-Data.rda")
+prison <- da37692.0001
+```
+
+
+```{r}
+prison_clean <- prison %>%
+  select(V0390, V0391, V0392, V0393, V0394)
+
+colnames(prison_clean) <- c("x1", "year", "month", "week", "day")
+
+prison_clean %>%
+  count(x1)
+
+prison %>%
+  count(V1951) %>%
+  arrange(desc(n))
+
+prison %>%
+  count(RV0004) %>%
+  arrange(desc(n))
+
+prison_filt <- prison %>%
+  select(current_age = RV0001, race = RV0003, citizen = RV0004,
+         military_service = RV0008, controlling_offense = RV0036, controlling_offense_type = RV0037,
+         education = RV0054, firearm_at_offense = RV0095 hispanic_origin = V0015, race_white = V0016, race_black = V0017, race_native_american = V0018,
+         race_asian = V0019, race_hawaiian = V0020, race_other = V0021, veteran = V0023,
+         served_in_combat = V0036, arrest_year = V0055Y, admit_year = V0056Y, offense_type_1 = V0064,
+         offense_type_2 = V0065, offense_type_3 = V0066, offense_type_4 = V0067, offense_type_6 = V0068,
+         violent_offense_type = V0069, held_by = V0071, sentenced = V0073, awaiting = V0075, 
+         arrested_during_status = V0078, jail_time_served = V0390, jail_time_yr = V0391, jail_time_mo = V0392,
+         jail_time_wk = V0393, jail_time_dy = V0394, jail_time_applied = V0395, jail_time_applied_yr = V0396,
+         jail_time_applied_mo = V0397, jail_time_applied_wk = V0398, jail_time_applied_dy = V0399,
+         sentenced_yr = V0402, sentenced_mo = V0403, sentenced_wk = V0404, sentenced_dy = V0405,
+         drug_alc_trtmt_prog = V0460, state = V0772, age_at_first_arrest = V0899, highest_edu = V0935,
+         has_child = V0982, homeless_under_18 = V1165, foster_under_18 = V1166, sex = V1212, 
+         alc_at_arrest = V1267, drug_at_arrest = V1326)
+```
+race, 
+
+maybe model time until trial??? or sentencing?? so whether or not still awaiting trial = censoring, time in jail + any additional prison time = days, lots of demographic factors as covariates and potentially other values
+
+arrest date
+admission to prison date
+
+censoring: sentenced
+
+V0098
+V0412
+
+how long people wait for trial
+possible focuses: were they homeless (V0961), race, 
+
+V1040 on is about child contact/visitation
+V1172 on whether various fam members incarcerated
+mental health section!!
+
+V1217 seen healthcare provider
+
