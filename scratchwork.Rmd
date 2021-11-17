@@ -14,57 +14,16 @@ library(survminer)
 library(rstanarm)
 ```
 
-```{r}
+```{r load-data}
 load("data/37692-0001-Data.rda")
-load("data/37692-0002-Data.rda")
 prison <- da37692.0001
-state_only <- da37692.0002
 ```
 
-
-```{r}
-prison_clean <- prison %>%
-  select(V0390, V0391, V0392, V0393, V0394)
-
-colnames(prison_clean) <- c("x1", "year", "month", "week", "day")
-
-prison_clean %>%
-  count(x1)
-
-prison %>%
-  count(V1951) %>%
-  arrange(desc(n))
-
-prison %>%
-  count(V0489) %>%
-  arrange(desc(n))
-
-#consider victimless crimes
-#help_at_offense = V0478, victim_sex = V0489, 
-#victim_race V0488 and before
-
-prison %>%
-  filter(V0489 %in% c("(1) 1 = Male", "(2) 2 = Female")) %>%
-  count(RV0037)
-
-prison %>%
-  filter(V0488 %in% c("(1) 1 = Contained at least one valid response entry")) %>%
-  count(RV0037)
-
-prison %>%
-  count(V0491)
-
-prison %>%
-  count(V0557)
-
-prison %>%
-  filter(V0491 %in% c("(1) 1 = Knew", "(2) 2 = Stranger")) %>%
-  count(V0557)
-
+```{r clean-data}
 prison_filt <- prison %>%
   select(current_age = RV0001, race = RV0003, citizen = RV0004,
          military = RV0008, controlling_offense = RV0036, controlling_offense_type = RV0037,
-         education = RV0054, firearm_at_offense = RV0095,
+         education = RV0054, homeless_12mo_prior = V0961, firearm_at_offense = RV0095,
          arrest_year = V0055Y, admit_year = V0056Y, held_by = V0071, sentenced = V0073, awaiting = V0075, 
          arrested_during_status = V0078, jail_time_served = V0390, jail_time_yr = V0391, jail_time_mo = V0392,
          jail_time_wk = V0393, jail_time_dy = V0394,
@@ -79,7 +38,7 @@ prison_filt <- prison %>%
     across(c("jail_time_yr", "jail_time_mo", "jail_time_wk", "jail_time_dy"), 
                 ~ifelse(.x < 0, as.numeric(NA), .x)),
     jail_time_yr = ifelse(jail_time_yr > 40, as.numeric(NA), jail_time_yr),
-    time_estimate = admit_year - arrest_year)
+    time_estimate = admit_year - arrest_year) %>%
   rowwise() %>%
   mutate(
     jail_time = case_when(
@@ -89,13 +48,13 @@ prison_filt <- prison %>%
     ungroup()
 
 prison_filt %>%
-  count(victim_hispanic)
+  count(victim_hispanic2, victim_hispanic)
 
 attributes(prison_filt)$variable.labels <- NULL
 
-prison_mod <- prison_filt %>%
-  select(current_age, race, sex, citizen, military, education, jail_time_served, jail_time,
-         arrest_year, admit_year, held_by, sentenced, controlling_offense, controlling_offense_type,
+prison_filt %<>%
+  select(current_age, race, sex, citizen, military, education, homeless_12mo_prior, jail_time_served, jail_time,
+         arrest_year, admit_year, held_by, state, sentenced, controlling_offense, controlling_offense_type,
          arrested_during_status, firearm_at_offense, alc_at_offense, drug_at_offense, 
          victim_hispanic, victim_hispanic2, victim_white, victim_white2, victim_black, victim_black2, 
          victim_native_american, victim_native_american2, victim_asian, victim_asian2,
@@ -103,10 +62,11 @@ prison_mod <- prison_filt %>%
          victim_sex, victim_age, victim_known, victim_offense) %>%
   mutate(across(c("race", "citizen", "military", "controlling_offense", "controlling_offense_type",
                   "education", "firearm_at_offense", "held_by", "sentenced", "arrested_during_status",
-                  "jail_time_served", "sex", "alc_at_offense", "drug_at_offense", starts_with("victim")), 
+                  "jail_time_served", "sex", "alc_at_offense", "drug_at_offense", starts_with("victim"),
+                  "homeless_12mo_prior"), 
                 ~ str_remove(as.character(.x), "\\(\\d+\\) \\d+ = ")),
          across(c("arrest_year", "admit_year"), ~ifelse(.x == 999999, as.numeric(NA), .x)),
-         across(c("alc_at_offense", "drug_at_offense", "sentenced", starts_with("victim")), 
+         across(c("sex", "alc_at_offense", "drug_at_offense", "sentenced", starts_with("victim"), "homeless_12mo_prior"), 
                 ~ifelse(.x %in% c("(-1) -1 = Don't Know", "(-2) -2 = Refusal"), as.character(NA), .x)),
          race = str_remove(race, " \\(NH\\)"),
          race = case_when(
@@ -169,65 +129,125 @@ prison_mod <- prison_filt %>%
          is.na(victim_race2) ~ victim_race2,
          TRUE ~ "Multiple"),
          victim_race = ifelse(is.na(victim_race), victim_race2, victim_race),
+         victim_hispanic2 = case_when(
+           victim_hispanic2 %in% c("All were Hispanic", "Most were Hispanic", "They were evenly divided") ~ "Yes",
+           victim_hispanic2 == "Most were Non-Hispanic" ~ "No",
+           TRUE ~ victim_hispanic2),
          victim_hispanic = ifelse(is.na(victim_hispanic), victim_hispanic2, victim_hispanic)) %>%
   select(-victim_hispanic2, -victim_white, -victim_white2, -victim_black, -victim_black2, 
          -victim_native_american, -victim_native_american2, -victim_asian, -victim_asian2,
          -victim_hawaiian, -victim_hawaiian2, -victim_race2)
 
-prison_mod %>%
-  count(sentenced)
-
-prison_mod %<>%
+# prepare for survival analysis
+prison_filt %<>%
   mutate(censored = case_when(
     sentenced == "No" ~ 0,
     sentenced == "Yes" ~ 1,
     TRUE ~ as.numeric(NA)))
+```
 
+Motivation:
+Pre-trial detention is significant and destabilizing. People held in limbo by the criminal legal system for years. Some data available for scraping from jails but lots of problems with transparency here. ICPSR Survey of Prison Inmates 2016 allows a look at a large population across the U.S. and hoow long they reported they were detained in jails. The majority have been sentenced, although some reported that they had not been sentenced -- for these individuals, the time spent waiting for trial, or pre-sentencing, is censored. This data is restricted to individuals spending time in prison, so will exclude a majority of those with dismissed or not guilty charged who were also held pretrial. However, it still provides an important window into the punishment people face in America before they are even tried, the wait for justice.
+
+Research questions:
+
+1) When controlling for aspects of the main offense they are prosecuted for, do individuals incarcerated in United States prisons in different racial and ethnic groups wait longer before sentencing? Are there other factors that contribute to longer time spent in pre-trial detention?
+
+2) Does time detained pre-trial have any relationship with characteristics of the victims of "violent" crimes, such as sex, race, age, and whether they are known by the detained individual?
+
+
+```{r}
 # what to do about these
-prison_mod %>%
+prison_filt %>%
   filter(max_time_est > 0 & jail_time / 365 > max_time_est) %>%
   select(jail_time, max_time_est, admit_year, arrest_year)
-
-prison_mod %>%
-  filter(is.na(jail_time))
-
-prison_mod %>%
-  count(race) %>%
-  arrange(desc(n))
-
-prison_mod %>%
-  count(victim_died) %>%
-  arrange(desc(n))
-
-
-prison_mod %>%
-  ggplot(aes(x = jail_time)) +
-  geom_histogram() +
-  scale_x_continuous(limits = c(0, 2500))
-
-prison_filt %>%
-  count(jail_time) %>%
-  arrange(desc(jail_time))
 ```
 
 ```{r}
-data <- prison_mod %>%
+prison_filt <- read_csv("data/prison-clean.csv")
+
+# data for first analysis
+data <- prison_filt %>%
   select(!starts_with("victim"))
 
-data_v <- prison_mod %>%
+# data for second analysis
+data_v <- prison_filt %>%
   filter(controlling_offense_type == "Violent")
+```
 
 
+```{r eda, fig.asp=1.5}
+prison_filt %>%
+  ggplot(aes(x = jail_time)) +
+  geom_histogram()
 
-prison_mod %>%
-  count(controlling_offense, is.na(victim_sex)) %>%
-  arrange(controlling_offense)
+data_v %>%
+  ggplot(aes(x = jail_time)) +
+  geom_histogram() +
+  scale_x_continuous(limits = c(0, 1825)) +
+  coord_cartesian(ylim = c(0, 3000))
 
-prison_mod %>%
-  count(controlling_offense_type, controlling_offense)
+prison_filt %>%
+  ggplot(aes(x = jail_time)) +
+  geom_histogram() +
+  scale_x_continuous(limits = c(0, 1825)) +
+  coord_cartesian(ylim = c(0, 3000))
 
-data2 <- prison_mod %>%
-  filter()
+prison_filt %>%
+  ggplot(aes(y = log(jail_time), x = race)) +
+  geom_boxplot()
+
+covariates <- colnames(prison_filt)
+
+covariates <- covariates[covariates != "jail_time"]
+  
+
+plot_box <- function(varname_c){
+  p1 <- prison_filt %>%
+    filter(jail_time <= 1825) %>%
+    ggplot(aes(x = jail_time, y = fct_reorder(get(varname_c), jail_time, .fun = median, .desc = TRUE))) +
+    geom_boxplot() +
+    labs(y = "Days in Jail", x = varname_c) +
+    theme_minimal()
+  
+  return(p1)
+}
+
+plot_box("sex")
+plot_box("race")
+plot_box("race_black")
+plot_box("race_white")
+plot_box("citizen")
+plot_box("military")
+plot_box("education")
+plot_box("homeless_12mo_prior")
+plot_box("held_by")
+plot_box("sentenced")
+plot_box("controlling_offense")
+plot_box("controlling_offense_type")
+plot_box("arrested_during_status")
+plot_box("firearm_at_offense")
+plot_box("alc_at_offense")
+plot_box("drug_at_offense")
+plot_box("state")
+
+plot_box_v <- function(varname_c){
+  p1 <- data_v %>%
+    filter(jail_time <= 1825) %>%
+    ggplot(aes(y = jail_time, x = fct_reorder(get(varname_c), jail_time, .fun = median, .desc = TRUE))) +
+    geom_boxplot() +
+    labs(y = "Days in Jail", x = varname_c) +
+    theme_minimal()
+  
+  return(p1)
+}
+
+plot_box_v("victim_hispanic")
+plot_box_v("victim_race")
+plot_box_v("victim_sex")
+plot_box_v("victim_known")
+plot_box_v("victim_age")
+plot_box_v("victim_offense")
 ```
 
 ```{r}
@@ -265,21 +285,19 @@ admission to prison date
 
 censoring: sentenced
 
-V0098
-V0412
 
 how long people wait for trial
 possible focuses: were they homeless (V0961), race, 
-
-V1040 on is about child contact/visitation
-V1172 on whether various fam members incarcerated
-mental health section!!
-
-V1217 seen healthcare provider
 
 what contributes to how much time people spend in jail pre-trial
 
 outcome = time in jail + time in prison pre-sentencing
 censoring = have you been sentenced (no = censored)
 look at attributes law enforcement and DA would know about -- racial groups, crime type, firearm, victim type
+
+## References
+drop column labels from rda
+https://stackoverflow.com/questions/61071655/r-extract-labels-from-a-rda-data-frame
+
+
 

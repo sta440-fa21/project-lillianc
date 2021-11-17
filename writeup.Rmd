@@ -1,0 +1,42 @@
+---
+title: 'Waiting for Trial: A Case Study of Detention Times Prior to Sentencing'
+author: "Lillian Clark"
+date: "11/16/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(magrittr)
+library(survival)
+library(survminer)
+library(rstanarm)
+```
+
+```{r load-data, message=FALSE}
+prison <- read_csv("data/prison-clean.csv")
+
+# data for first analysis
+data <- prison %>%
+  select(!starts_with("victim"))
+
+# data for second analysis
+data_v <- prison %>%
+  filter(controlling_offense_type == "Violent")
+```
+
+Motivation:
+Pre-trial detention is significant and destabilizing. People held in limbo by the criminal legal system for years. Some data available for scraping from jails but lots of problems with transparency here. ICPSR Survey of Prison Inmates 2016 allows a look at a large population across the U.S. and hoow long they reported they were detained in jails. The majority have been sentenced, although some reported that they had not been sentenced -- for these individuals, the time spent waiting for trial, or pre-sentencing, is censored. This data is restricted to individuals spending time in prison, so will exclude a majority of those with dismissed or not guilty charged who were also held pretrial. However, it still provides an important window into the punishment people face in America before they are even tried, the wait for justice.
+
+Research questions:
+
+1) When controlling for aspects of the main offense they are prosecuted for, do individuals incarcerated in United States prisons in different racial and ethnic groups wait longer before sentencing? Are there other factors that contribute to longer time spent in pre-trial detention?
+
+2) Does time detained pre-trial have any relationship with characteristics of the victims of "violent" crimes, such as sex, race, age, and whether they are known by the detained individual?
+
+TO DO:
+
+- what to do with people whose jail time exceeded their estimated time with admit - arrest?
+
+
