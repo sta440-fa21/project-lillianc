@@ -176,7 +176,7 @@ data_v <- prison_filt %>%
 ```
 
 
-```{r eda, fig.asp=1.5}
+```{r eda}
 prison_filt %>%
   ggplot(aes(x = jail_time)) +
   geom_histogram()
@@ -250,10 +250,15 @@ plot_box_v("victim_age")
 plot_box_v("victim_offense")
 ```
 
+offense covariates: controlling_offense, controlling_offense_type, arrested_during_status, firearm_at_offense, alc_at_offense, drug_at_offense
+policy covariates: arrest_year, held_by, state
+demographic/subject characteristic covariates: age, race, sex, citizen, military?, education, homeless_12mo_prior
+then also victim variables:
+
 ```{r}
 survdata <- data
 
-ggsurvplot(survfit(Surv(jail_time, censored) ~ race, data = survdata),
+ggsurvplot(survfit(Surv(jail_time, censored) ~ state, data = survdata),
      legend.title = "",
      conf.int = F, censor = F,
      xlim = c(0, 2500),
@@ -264,7 +269,7 @@ ggsurvplot(survfit(Surv(jail_time, censored) ~ victim_race, data = data_v),
      conf.int = F, censor = F,
      xlim = c(0, 2500),
      ggtheme = theme_minimal())
-
+```
 
 
 logrank_test <- survdiff(Surv(yos, retired) ~ onedone01, data = surv_data)
@@ -274,6 +279,123 @@ tidy_logrank <- tidy(logrank_test) %>%
          calc_oez = ((obs - exp) ^ 2 ) / diag(logrank_test$var),
          onedone01 = ifelse(onedone01 == 1, "One-and-Done", "Longer College Stay"))
 
+
+offense covariates: controlling_offense, controlling_offense_type, arrested_during_status, firearm_at_offense, alc_at_offense, drug_at_offense
+policy covariates: arrest_year, held_by, state
+demographic/subject characteristic covariates: current_age, race, sex, citizen, military?, education, homeless_12mo_prior
+
+names(aft_ln$coefficients) <- c("(Intercept)", 
+                                "One-and-Done Status", 
+                                "Plays Position F", 
+                                "Plays Position G", 
+                                "Player Height (in)",
+                                "Foreign Nationality")
+tidy_aft <- tidy(aft_ln)
+tidy_aft$p.value <- pvalue(tidy_aft$p.value,
+                              accuracy = 0.001, 
+                              decimal.mark = ".",
+                              add_p = FALSE)
+kable_styling(kable(tidy_aft, digits = c(3,3,3,3), 
+                    caption = "AFT (log-normal) Model Output (with confounders)",
+                    col.names = c("Model Term", "Estimate", "Standard Error", "Test Statistic", "p-Value")),
+              latex_options = "HOLD_position")
+
+```{r}
+m1 <- lm(jail_time ~ controlling_offense + arrested_during_status 
+                  + firearm_at_offense + alc_at_offense + drug_at_offense 
+                  + arrest_year + held_by + state 
+                  + age_at_arrest + race + sex + citizen + military + education + homeless_12mo_prior,
+   data = data)
+
+data %>%
+  #select(police, mobility, parks, publichealth, publicschool, privateschool, charterschool, govtcovid) %>%
+  cor() %>%
+  ggcorrplot(hc.order = TRUE, type = "lower",
+     outline.col = "white", lab = T, lab_size = 2, tl.cex = 8, show.legend = F)
+
+
+survdata %<>%
+  filter(!is.na(jail_time)) %>%
+  mutate(jail_time = ifelse(jail_time == 0, 0.00001, jail_time))
+
+aft_ln <- survreg(Surv(jail_time, censored) ~ controlling_offense + arrested_during_status 
+                  + firearm_at_offense + alc_at_offense + drug_at_offense 
+                  + arrest_year + held_by + state 
+                  + age_at_arrest + race + sex + citizen + military + education + homeless_12mo_prior, 
+                  data = survdata, 
+                  dist = "lognormal")
+
+aft_e <- survreg(Surv(jail_time, censored) ~ controlling_offense + arrested_during_status 
+                  + firearm_at_offense + alc_at_offense + drug_at_offense 
+                  + arrest_year + held_by + state 
+                  + age_at_arrest + race + sex + citizen + military + education + homeless_12mo_prior, 
+                  data = survdata,  
+                 dist = "exponential")
+
+aft_w <- survreg(Surv(jail_time, censored) ~ controlling_offense + arrested_during_status 
+                  + firearm_at_offense + alc_at_offense + drug_at_offense 
+                  + arrest_year + held_by + state 
+                  + age_at_arrest + race + sex + citizen + military + education + homeless_12mo_prior, 
+                  data = survdata, 
+                 dist = "weibull")
+
+aft_l <- survreg(Surv(jail_time, censored) ~ controlling_offense + arrested_during_status 
+                  + firearm_at_offense + alc_at_offense + drug_at_offense 
+                  + arrest_year + held_by + state 
+                  + age_at_arrest + race + sex + citizen + military + education + homeless_12mo_prior, 
+                  data = survdata, 
+                 dist = "loglogistic")
+
+coxm1 <- coxph(Surv(jail_time, censored) ~ controlling_offense + arrested_during_status 
+                  + firearm_at_offense + alc_at_offense + drug_at_offense 
+                  + arrest_year + held_by + state 
+                  + age_at_arrest + race + sex + citizen + military + education + homeless_12mo_prior, 
+                  data = survdata)
+
+names(coxm1$coefficients) <- c("One-and-Done Status",
+                                "Plays Position F",
+                                "Plays Position G",
+                                "Player Height (in)",
+                                "Foreign Nationality")
+
+ggcoxdiagnostics(coxm1, type = "schoenfeld", title = "Figure 8: Schoenfeld Residuals of Cox PH Model with All Confounders",
+                 xlab = "Observation ID", ylab = "Schoenfeld Residuals")
+
+names(coxm2$coefficients) <- c("One-and-Done Status",
+                                "Player Height (in)")
+
+ggcoxdiagnostics(coxm2, type = "schoenfeld", title = "Figure 9: Schoenfeld Residuals of Cox PH Model with Player Height",
+                 xlab = "Observation ID", ylab = "Schoenfeld Residuals")
+
+resids <- (log(survdata$jail_time) - aft_ln$linear.predictors) / (aft_ln$scale)
+m1 <- survfit(Surv(resids, censored) ~ 1, data = survdata)
+plot(m1, xlab = "AFT Residuals", 
+     ylab = "Survival Probability", 
+     main = "Log-Normal Model with All Confounders")
+exp.x <- seq(min(resids), max(resids), length = 100)
+exp.y <- pnorm(exp.x, lower.tail = F)
+lines(exp.x, exp.y, col = "red", lwd = 2)
+
+resids <- (log(survdata$jail_time) - aft_e$linear.predictors) / (aft_e$scale)
+plot(m1, xlab = "AFT Residuals", 
+     ylab = "Survival Probability", 
+     main = "Exponential Model with All Confounders")
+exp.y <- exp(-exp(exp.x))
+lines(exp.x, exp.y, col = "red", lwd = 2)
+
+resids <- (log(survdata$jail_time) - aft_w$linear.predictors) / (aft_w$scale)
+plot(m1, xlab = "AFT Residuals", 
+     ylab = "Survival Probability", 
+     main = "Weibull Model with All Confounders")
+exp.y <- exp(-exp(exp.x))
+lines(exp.x, exp.y, col = "red", lwd = 2)
+
+resids <- (log(survdata$jail_time) - aft_l$linear.predictors) / (aft_l$scale)
+plot(m1, xlab = "AFT Residuals", 
+     ylab = "Survival Probability", 
+     main = "Logistic Model with All Confounders")
+exp.y <- plogis(exp.x, lower.tail = F)
+lines(exp.x, exp.y, col = "red", lwd = 2)
 ```
 
 race, 

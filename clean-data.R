@@ -50,6 +50,7 @@ prison_filt %<>%
          across(c("sex", "alc_at_offense", "drug_at_offense", "sentenced", starts_with("victim"), "homeless_12mo_prior"),
                 ~ifelse(.x %in% c("(-1) -1 = Don't Know", "(-2) -2 = Refusal"), as.character(NA), .x)),
          across(c("military", "controlling_offense_type"), ~ifelse(.x == "DK/REF", as.character(NA), .x)),
+         age_at_arrest = current_age - (2016 - arrest_year),
          race = str_remove(race, " \\(NH\\)"),
          race = case_when(
            race == "Uncategorized - Missing" ~ as.character(NA),
