@@ -107,11 +107,13 @@ jailtimeserved_grid <- prison %>%
   count(jail_time_served)
 ```
 
-In the data, 90.0% of individuals reported serving jail time, 8.3% reported serving no jail time, and 1.7% skipped the related survey questions (jail time served and amount of jail time) (CHECK THIS). Without performing imputation, this means `r jailtimeserved_grid[[3, 2]]` individuals have missing data for jail time, and INSERT JUSTIFICATION
+In the data, 90.0% of individuals reported serving jail time, 8.3% reported serving no jail time, and 1.7% skipped the related survey questions (jail time served and amount of jail time) (CHECK THIS). This means `r jailtimeserved_grid[[3, 2]]` individuals have missing data for jail time, and INSERT JUSTIFICATION these individuals will be exluded from the analysis (after the jail time served logistic model).
 
-The maximum jail time reported in the data was 37 years, though the majority of individuals served 3 years or less. In 2017, The New York Times wrote that Kharon Davis's 10-year wait pre-trial was "among the most protracted" they could find.^[citation] Thus, this will serve as a best estimate for expected maximum jail time, and we will filter the data before analysis to remove observations with jail time greater than or equal to 11 years. This removes 285 observations or 1.2% of the dataset.
+The maximum jail time reported in the data was 37 years, though the majority of individuals served 3 years or less. In 2017, The New York Times wrote that Kharon Davis's 10-year wait pre-trial was "among the most protracted" they could find.^[citation] Thus, this will serve as a best estimate for expected maximum jail time, and we will filter the data before analysis to remove observations with jail time greater than or equal to 11 years. This removes 285 observations or 1.2% of the dataset. Also, 
 
 ```{r}
+prison <- read_csv("data/prison-clean.csv")
+
 prison_filt <- prison %>%
   filter(jail_time <= 11 * 365)
 
@@ -125,7 +127,7 @@ get_nas <- function(varname_c){
 }
 
 get_nas("age_at_arrest")
-get_nas("arrest_year")
+get_nas("arrest_year_range")
 get_nas("admit_year")
 get_nas("sex")
 get_nas("race")
