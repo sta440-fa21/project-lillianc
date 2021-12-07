@@ -1,7 +1,7 @@
 ---
-title: 'Waiting for Trial: A Case Study of Detention Times Prior to Sentencing (Draft Manuscript)'
+title: 'Waiting for Trial: A Case Study of Detention Times Prior to Sentencing'
 author: "Lillian Clark"
-date: "11/23/2021"
+date: "12/7/2021"
 output: pdf_document
 ---
 
@@ -12,6 +12,9 @@ library(magrittr)
 library(survival)
 library(survminer)
 library(rstanarm)
+library(scales)
+library(RColorBrewer)
+library(patchwork)
 ```
 
 ```{r load-data, message=FALSE}
@@ -26,14 +29,20 @@ data_v <- prison %>%
   filter(controlling_offense_type == "Violent")
 ```
 
+```{r set-colors}
+cols <- brewer.pal(8, "Accent")
+```
+
 ### Introduction
 
-Outline:
+In 2019, 23.3% of incarcerated people in the United States were legally innocent -- they had not been tried on their charges in a court of law.^[World Prison Brief https://www.prisonstudies.org/country/united-states-america]. The Prison Policy Initiative found that the number of people in jail pre-trial has nearly quadrupled since the 1980s.^[https://www.prisonpolicy.org/research/pretrial_detention/] Pretrial detention is severely destabilizing for incarcerated individuals and their families. Even a few days in jail can cause people to lose their jobs, their homes, or custody of their children. Studies have shown that people who are detained pretrial are more likely to be convicted and more likely to receive harsher sentences than those who go free.^[need citation] Pretrial detention is also associated with significantly higher recidivism rates.^[Citation]
+  
+Widespread use of money bail has led to the criminalization of poverty, where individuals who can afford to pay a bail bondsman's fee or to tie up thousands of their own dollars in the court system for months or years can go free, and individuals without those funds sit in jail. This can force innocent individuals who can't pay to claim guilt and accept a plea deal simply to get out of jail faster. In the U.S., there are also clear racial disparities among pretrial detainees. Young Black men are roughly 50% more likely to be detained than white individuals.^[Prison Policy Initiative]. Some people are held in limbo by the criminal legal system for amounts of time comparable to what they would serve if they were convicted. In 2017, The New York Times profiled Kharon Davis, a man who spent at least ten years in county jail awaiting trial. They wrote, "Though he has not been found guilty, Mr. Davis has already served half of the minimum sentence for murder."^[https://www.nytimes.com/2017/09/19/us/alabama-kharon-davis-speedy.html]
 
-- In 2019, 23.3% of incarcerated people in the United States were legally innocent -- they had not been tried on their charges in a court of law.^[World Prison Brief https://www.prisonstudies.org/country/united-states-america]. The Prison Policy Initiative that the number of people in jail pre-trial has nearly quadrupled since the 1980s.^[https://www.prisonpolicy.org/research/pretrial_detention/] Pretrial detention is severely destabilizing for incarcerated individuals and their families. Even a few days in jail can cause people to lose their jobs, their homes, or custody of their children. Studies have shown that people who are detained pretrial are more likely to be convicted and more likely to receive harsher sentences than those who go free. Pretrial detention is also associated with significantly higher recidivism rates. 
-- Widespread use of money bail has led to the criminalization of poverty, where individuals who can afford to pay a bail bondsman's fee or to tie up thousands of their own dollars in the court system for months or years can go free and individuals without those funds sit in jail. This can force innocent individuals who can't pay to claim guilt and accept a plea deal simply to get out faster. In the U.S., there are also clear racial disparities among pretrial detainees. Young Black men are roughly 50% more likely to be detained than white individuals.^[Prison Policy Initiative]. Some people are held in limbo by the criminal legal system for amounts of time comparable to what they would serve if they were convicted. In 2017, The New York Times profiled Kharon Davis, a man who spent at least ten years in county jail awaiting trial. They wrote, "Though he has not been found guilty, Mr. Davis has already served half of the minimum sentence for murder."^[https://www.nytimes.com/2017/09/19/us/alabama-kharon-davis-speedy.html]
-- Not everyone held in jail is awaiting trial -- there are also individuals with relatively minor convictions (like parole violations or misdemeanors) that serve their sentences there (usually for less than a year). The proportion of pretrial detainees in jail populations has increased from 53% in 1970 to 64% in 2015.^[Vera Brief https://www.vera.org/downloads/publications/Justice-Denied-Evidence-Brief.pdf] Some data is available for scraping from local jails but there are significant problems with transparency, inaccuracies or data entry issues. These problems can make it hard to do things like parse our which jail inhabitants have been convicted and which have not. It makes studying pretrial detention and inequities harder.^[The Transparency of Jail Data, https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3741638]
-- The ICPSR 2016 Survey of Prison Inmates contains data from 364 prisons across the United States. 24,848 incarcerated individuals participated, 81% of which were held at the time in state prisons and the other 19% in federal prisons. Part of the survey asked respondents how long they had been detained in jail.
+Not everyone held in jail is awaiting trial -- there are also individuals with relatively minor convictions like parole violations or misdemeanors who serve their full sentences there, usually for less than a year. The proportion of pretrial detainees in jail populations has increased from 53% in 1970 to 64% in 2015.^[Vera Brief https://www.vera.org/downloads/publications/Justice-Denied-Evidence-Brief.pdf] Some data is available for web scraping from local jails but there are significant problems with transparency, inaccuracies or data entry issues in this data. (INSERT SCREENSHOT OF DURHAM JAIL LIST) These problems make it difficult to determine which jail inhabitants have been convicted and which have not. It also makes studying pretrial detention and inequities harder.^[The Transparency of Jail Data, https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3741638]
+
+The ICPSR 2016 Survey of Prison Inmates contains data from 364 prisons across the United States. 24,848 incarcerated individuals participated, 81% of which were held in state prisons and the other 19% in federal prisons. Part of the survey asked respondents how long they had been detained in jail.
+
 - Error involved in any kind of survey data: jail time is self-reported and not verified from a second source. Also, the survey question doesn't ask participants to specify whether this jail time was pre-detention. Using jail time as length of pre-trial detention is not a perfect proxy, but we have reason to believe it is a good one (at least given the way the system is supposed to work), since those serving their sentences for minor convictions in jails should not have been surveyed and split jail-prison sentences are not the norm -- generally, individuals in prison, if they were detained pretrial, did so in jails, and were transferred to prisons after their convictions. 
 - 391 individuals, or 1.6% of all observations in the data, reported that they had not yet been sentenced. These pretrial wait times are right-censored, but the group is very small compared to the overall survey participants.
 - This data is restricted to individuals in prison, so will exclude those with dismissed or not guilty charges who were also held pretrial. However, it still provides an important window into the punishment people face in America before they are even tried (the wait for justice).
@@ -42,22 +51,111 @@ Research questions:
 
 1) When controlling for aspects of the main offense they are prosecuted for and other policy-related covariates, do individuals incarcerated in United States prisons in different racial and ethnic groups wait longer before sentencing?
 
-2) Does time detained pre-trial have any relationship with characteristics of the victims of "violent" crimes, such as sex, race, age, and whether they were known by the detained individual?
+2) Does time detained pre-trial have any relationship with characteristics, such as sex, race, age, and whether they were known by the detained individual, of the victims of "violent" crimes?
 
 - Extended pretrial limbo impacts both the detained accused and victims waiting for resolution. Looking at victim characteristics is essential because of the way racial bias and violence have historically been and continue to be codified in the criminal legal system, where white victims are more likely to get attention and justice than Black and brown victims. We see this in the disproportionate national media fervor over cases of white women who go missing or face violence while missing Black and Indigenous women are often ignored or overlooked. Class can play into this as well, with lower-class white victims experiencing different levels of treatment and attention than their upper-class counterparts. Unfortunately the ICPSR survey does not include information on victim income, so I lack the data necessary to add this consideration to analysis. Regardless, the disparities in treatment based on racial dynamics are complicated. It's difficult to outline an ideal outcome because we can imagine scenarios in which less time spent pre-trial with this dynamic might be worse for the defendant. Like in the case of Walter McMillian^[Bryan Stevenson, Just Mercy], innocent Black men have frequently been accused of violence against white women and swept through a speedy and unfair trial on a wave of white supremacist fervor. Hasty prosecution and extensive pretrial detention are two very important ways justice is denied, but they manifest as opposite effects in our data. This analysis is limited in its ability to address all that complexity, keeping in mind the meanings of such varied outcomes for both victims and defendants alike. However, it will attempt to shed some light on whether there are differences based on victim characteristics and what the magnitudes of those differences are.
 
 #### Data Description
 
+**Figure 2: Distribution of Jail Time**
+
+```{r fig.height=3}
+jailtimeserved_barplot <- prison %>%
+  ggplot(aes(x = jail_time_served, fill = jail_time_served)) +
+  geom_bar(show.legend = FALSE) +
+  scale_y_continuous(labels = label_number(accuracy = 1, scale = 1 / 1000, suffix = "K")) +
+  scale_fill_manual(values = cols[1:2]) +
+  labs(title = "Jail Time Served",
+       y = "Individuals",
+       x = NULL) +
+  theme_minimal() +
+  theme(panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank())
+
+jailtime_boxplot <- prison %>%
+  filter(!is.na(jail_time), jail_time_served == "Yes") %>%
+  ggplot(aes(x = jail_time)) +
+  geom_boxplot(width = 0.2, alpha = 0.5) +
+  scale_x_continuous(breaks = seq(0, 13505, 365 * 5), labels = label_number(accuracy = 1, scale = 1 / 365)) +
+  scale_y_continuous(limits = c(-0.1, 0.1)) +
+  labs(title = "Length of Jail Time Among Those Who Served", 
+       x = "Time Spent in Jail (years)", 
+       y = NULL) +
+  theme_minimal() +
+  theme(axis.text.y = element_blank(),
+        panel.grid = element_blank())
+
+jailtime_histogram <- prison %>%
+  filter(!is.na(jail_time), jail_time < 11 * 365, jail_time_served == "Yes") %>%
+  ggplot(aes(x = jail_time)) +
+  geom_histogram(fill = cols[[2]], color = "black", binwidth = 150) +
+  scale_x_continuous(breaks = seq(0, 11 * 365, 365 * 2), labels = label_number(accuracy = 1, scale = 1 / 365)) +
+  scale_y_continuous(labels = label_number(accuracy = 1, scale = 1 / 1000, suffix = "K")) +
+  labs(title = "Length of Jail Time Served, 10 Years or Less", 
+       x = "Time Spent in Jail (years)", 
+       y = "Individuals") +
+  theme_minimal() +
+  theme(panel.grid.major.x = element_blank(),
+        panel.grid.major.y = element_blank())
+
+(jailtimeserved_barplot | 
+    ((jailtime_boxplot / jailtime_histogram) + plot_layout(heights = c(1, 5)))) +
+  plot_layout(guides = "collect",
+              widths = c(1, 3))
+
+jailtimeserved_grid <- prison %>% 
+  count(jail_time_served)
+```
+
+In the data, 90.0% of individuals reported serving jail time, 8.3% reported serving no jail time, and 1.7% skipped the related survey questions (jail time served and amount of jail time) (CHECK THIS). Without performing imputation, this means `r jailtimeserved_grid[[3, 2]]` individuals have missing data for jail time, and INSERT JUSTIFICATION
+
+The maximum jail time reported in the data was 37 years, though the majority of individuals served 3 years or less. In 2017, The New York Times wrote that Kharon Davis's 10-year wait pre-trial was "among the most protracted" they could find.^[citation] Thus, this will serve as a best estimate for expected maximum jail time, and we will filter the data before analysis to remove observations with jail time greater than or equal to 11 years. This removes 285 observations or 1.2% of the dataset.
+
+```{r}
+prison_filt <- prison %>%
+  filter(jail_time <= 11 * 365)
+
+get_nas <- function(varname_c){
+  p1 <- prison %>%
+    filter(jail_time <= 11 * 365)%>%
+    count(get(varname_c)) %>%
+    arrange(desc(n))
+  
+  return(p1)
+}
+
+get_nas("age_at_arrest")
+get_nas("arrest_year")
+get_nas("admit_year")
+get_nas("sex")
+get_nas("race")
+get_nas("citizen")
+get_nas("military")
+get_nas("education")
+get_nas("homeless_12mo_prior")
+get_nas("held_by")
+get_nas("sentenced")
+get_nas("controlling_offense")
+get_nas("controlling_offense_type")
+get_nas("arrested_during_status")
+get_nas("firearm_at_offense")
+get_nas("alc_at_offense")
+get_nas("drug_at_offense")
+get_nas("state")
+```
+
+**Figure 3: Distribution of Predictors**
+
+```{r}
+prison %>%
+  filter(is.na(jail_time_served)) %>%
+  count(jail_time_served, sentenced)
+```
+
+
 
 ##### Question 1
 
-```{r}
-glimpse(data)
-```
-
-- First, drop individuals who reported they had not been sentenced (391)
-- Plot of distribution of jail time (some as high as 40 years, though the majority less than 5 years)
-- In 2017, The New York Times wrote that Kharon Davis's wait of 10 years pre-trial was "among the most protracted" that they could find -- this is the best guess estimate of what is reasonable which I have, thus, will filter data to remove observations with jail time > 11 years. This removes 285 observations or 1.2% of the dataset.
 - Boxplots of distribution of jail time by race, sex, citizen, education, controlling offense type. Map of median jail time by state (since right skewed). Table of median and range of jail time across other predictors in the data set (possibly in appendix)
 - Three groups of confounders of interest: policy (arrest year, held by, state), charge details (controlling offense, arrested during status, firearm at offense, alcohol at offense, drugs at offense) and incarcerated individual characteristics (age at arrest, race, sex, citizen, military, education, homeless in 12 months prior to offense)
 
