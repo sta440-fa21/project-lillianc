@@ -155,11 +155,11 @@ prison_filt %<>%
     TRUE ~ as.numeric(NA)),
     race_white = case_when(
       race == "White" ~ "Y",
-      is.na(race) ~ as.character(NA),
+      race == "Not Reported" ~ race,
       TRUE ~ "N"),
     race_black = case_when(
       race == "Black" ~ "Y",
-      is.na(race) ~ as.character(NA),
+      race == "Not Reported" ~ race,
       TRUE ~ "N"))
 
 write_csv(prison_filt, "data/prison-clean.csv")
