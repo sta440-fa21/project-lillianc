@@ -19,8 +19,7 @@ prison_filt <- prison %>%
          victim_offense = V0495, victim_injured = V0496, victim_died = V0497,
          state = V0772, sex = V1212,
          alc_at_offense = V1267, drug_at_offense = V1326) %>%
-  mutate(
-    across(c("jail_time_yr", "jail_time_mo", "jail_time_wk", "jail_time_dy"),
+  mutate(across(c("jail_time_yr", "jail_time_mo", "jail_time_wk", "jail_time_dy"),
            ~ifelse(.x < 0, as.numeric(NA), .x)),
     jail_time_yr = ifelse(jail_time_yr > 40, as.numeric(NA), jail_time_yr),
     time_estimate = admit_year - arrest_year) %>%
@@ -109,15 +108,14 @@ prison_filt %<>%
            age_at_arrest > 50 ~ "Over 50",
            is.na(age_at_arrest) ~ "Not Reported"),
          victim_race = case_when(
-           victim_race == "Contained a don't know response" ~ "Unknown",
-           victim_race %in% c("Not answered due to question skip", "Missing in-universe",
-                              "Refusal") ~ "Not Reported",
+           victim_race %in% c("Contained a don't know response", "Not answered due to question skip",
+                              "Missing in-universe", "Refusal") ~ "Not Reported",
            victim_race == "Contained at least one valid response entry" ~
              str_remove_all(str_remove_all(paste0(victim_white, ",", victim_black, ",", victim_native_american,
                                                   ",", victim_asian, ",", victim_hawaiian), "Blank"), ","),
            TRUE ~ as.character(NA)),
          victim_race = case_when(
-           victim_race %in% c("White" , "Unknown", "Not Reported") ~ victim_race,
+           victim_race %in% c("White" , "Not Reported") ~ victim_race,
            victim_race == "Black or African American" ~ "Black",
            victim_race == "American Indian or Alaska Native" ~ "American Indian/Alaska Native",
            victim_race %in% c("Native Hawaiian or Other Pacific Islander",
@@ -125,15 +123,14 @@ prison_filt %<>%
            is.na(victim_race) ~ victim_race,
            TRUE ~ "Multiple"),
          victim_race2 = case_when(
-           victim_race2 == "Contained a don't know response" ~ "Unknown",
-           victim_race %in% c("Not answered due to question skip", "Missing in-universe",
-                              "Refusal") ~ "Not Reported",
+           victim_race2 %in% c("Contained a don't know response", "Not answered due to question skip",
+                              "Missing in-universe", "Refusal") ~ "Not Reported",
            victim_race2 == "Contained at least one valid response entry" ~
              str_remove_all(str_remove_all(paste0(victim_white2, ",", victim_black2, ",", victim_native_american2,
                                                   ",", victim_asian2, ",", victim_hawaiian2), "Blank"), ","),
            TRUE ~ as.character(NA)),
          victim_race2 = case_when(
-           victim_race2 %in% c("White" , "Unknown", "Not answered") ~ victim_race2,
+           victim_race2 %in% c("White" , "Not Reported") ~ victim_race2,
            victim_race2 == "Black or African American" ~ "Black",
            victim_race2 == "American Indian or Alaska Native" ~ "American Indian/Alaska Native",
            victim_race2 %in% c("Native Hawaiian or Other Pacific Islander",
@@ -141,6 +138,7 @@ prison_filt %<>%
            is.na(victim_race2) ~ victim_race2,
            TRUE ~ "Multiple"),
          victim_race = ifelse(is.na(victim_race), victim_race2, victim_race),
+         #victim_race = ifelse(is.na(victim_race), "Not Reported", victim_race),
          victim_hispanic2 = case_when(
            victim_hispanic2 %in% c("All were Hispanic", "Most were Hispanic", "They were evenly divided") ~ "Yes",
            victim_hispanic2 == "Most were Non-Hispanic" ~ "No",

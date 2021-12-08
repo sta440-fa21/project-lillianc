@@ -19,14 +19,6 @@ library(patchwork)
 
 ```{r load-data, message=FALSE}
 prison <- read_csv("data/prison-clean.csv")
-
-# data for first analysis
-data <- prison %>%
-  select(!starts_with("victim"))
-
-# data for second analysis
-data_v <- prison %>%
-  filter(controlling_offense_type == "Violent")
 ```
 
 ```{r set-colors}
@@ -59,20 +51,33 @@ Research questions:
 
 **Figure 2: Distribution of Jail Time**
 
+```{r relabel-NR}
+prison_nr <- prison %>%
+  mutate_if(is.character, ~case_when(
+    .x == "Not Reported" ~ "NR", 
+    .x == "American Indian/Alaska Native" ~ "American Indian/\nAlaska Native",
+    .x == "Asian/Native Hawaiian/Other Pacific Islander" ~ "Asian/Native Hawaiian/\nOther Pacific Islander",
+    TRUE ~ .x)) %>%
+  mutate(across(c("race", "victim_race", "victim_sex", "victim_hispanic"), 
+                ~ifelse(.x == "NR", "Not Reported", .x)))
+```
+
 ```{r fig.height=3}
-jailtimeserved_barplot <- prison %>%
-  ggplot(aes(x = jail_time_served, fill = jail_time_served)) +
+jailtimeserved_barplot <- prison_nr %>%
+  ggplot(aes(x = fct_relevel(jail_time_served, "NR", "No", "Yes"), fill = jail_time_served)) +
   geom_bar(show.legend = FALSE) +
   scale_y_continuous(labels = label_number(accuracy = 1, scale = 1 / 1000, suffix = "K")) +
-  scale_fill_manual(values = cols[1:2]) +
+  scale_fill_manual(values = cols[1:3]) +
   labs(title = "Jail Time Served",
        y = "Individuals",
-       x = NULL) +
+       x = NULL,
+       caption = "NR = Not Reported") +
   theme_minimal() +
   theme(panel.grid.major.x = element_blank(),
-        panel.grid.minor.x = element_blank())
+        panel.grid.minor.x = element_blank(),
+        axis.title.x = element_blank())
 
-jailtime_boxplot <- prison %>%
+jailtime_boxplot <- prison_nr %>%
   filter(!is.na(jail_time), jail_time_served == "Yes") %>%
   ggplot(aes(x = jail_time)) +
   geom_boxplot(width = 0.2, alpha = 0.5) +
@@ -85,10 +90,10 @@ jailtime_boxplot <- prison %>%
   theme(axis.text.y = element_blank(),
         panel.grid = element_blank())
 
-jailtime_histogram <- prison %>%
+jailtime_histogram <- prison_nr %>%
   filter(!is.na(jail_time), jail_time < 11 * 365, jail_time_served == "Yes") %>%
   ggplot(aes(x = jail_time)) +
-  geom_histogram(fill = cols[[2]], color = "black", binwidth = 150) +
+  geom_histogram(fill = cols[[3]], color = "black", binwidth = 150) +
   scale_x_continuous(breaks = seq(0, 11 * 365, 365 * 2), labels = label_number(accuracy = 1, scale = 1 / 365)) +
   scale_y_continuous(labels = label_number(accuracy = 1, scale = 1 / 1000, suffix = "K")) +
   labs(title = "Length of Jail Time Served, 10 Years or Less", 
@@ -102,69 +107,113 @@ jailtime_histogram <- prison %>%
     ((jailtime_boxplot / jailtime_histogram) + plot_layout(heights = c(1, 5)))) +
   plot_layout(guides = "collect",
               widths = c(1, 3))
-
-jailtimeserved_grid <- prison %>% 
-  count(jail_time_served)
 ```
 
-In the data, 90.0% of individuals reported serving jail time, 8.3% reported serving no jail time, and 1.7% skipped the related survey questions (jail time served and amount of jail time) (CHECK THIS). This means `r jailtimeserved_grid[[3, 2]]` individuals have missing data for jail time, and INSERT JUSTIFICATION these individuals will be exluded from the analysis (after the jail time served logistic model).
+In the data, 90.0% of individuals reported serving jail time, 8.3% reported serving no jail time, and 1.7% skipped the related survey questions (jail time served and amount of jail time) (CHECK THIS). 457 individuals have missing data for jail time, and INSERT JUSTIFICATION these individuals will be excluded from the primary and secondary analyses (after the jail time served logistic model).
 
-The maximum jail time reported in the data was 37 years, though the majority of individuals served 3 years or less. In 2017, The New York Times wrote that Kharon Davis's 10-year wait pre-trial was "among the most protracted" they could find.^[citation] Thus, this will serve as a best estimate for expected maximum jail time, and we will filter the data before analysis to remove observations with jail time greater than or equal to 11 years. This removes 285 observations or 1.2% of the dataset. Also, 
+The maximum jail time reported in the data was 37 years, though the majority of individuals served 3 years or less. In 2017, The New York Times wrote that Kharon Davis's 10-year wait pre-trial was "among the most protracted" they could find.^[citation] Thus, this will serve as a best estimate for expected maximum jail time, and we will filter the data before analysis to remove observations with jail time greater than or equal to 11 years. This removes 285 observations or 1.2% of the dataset. Also, three individuals who did not report their military status and ten individuals who did not report their sentencing status were excluded from analysis.
 
-```{r}
-prison <- read_csv("data/prison-clean.csv")
-
+```{r filter-military-and-sentenced}
 prison_filt <- prison %>%
-  filter(jail_time <= 11 * 365)
+  filter(military != "Not Reported", sentenced != "Not Reported")
 
-get_nas <- function(varname_c){
-  p1 <- prison %>%
-    filter(jail_time <= 11 * 365)%>%
-    count(get(varname_c)) %>%
-    arrange(desc(n))
+prison_nr %<>%
+  filter(military != "NR", sentenced != "NR")
+
+# data for second analysis
+prison_violent <- prison_filt %>%
+  filter(controlling_offense_type == "Violent")
+
+prison_violent_nr <- prison_nr %>%
+  filter(controlling_offense_type == "Violent")
+```
+
+We are interested in controlling for a number of covariates when examining discrepancies in pre-trial detention. These can be split into three groups: **policy-related** covariates (arrest year, authority detained by, and state of detention facility), **charge-related** covariates (main offense and main offense type, legal status at arrest, posession of firearm at arrest, under the influence of alcohol at arrest, and under the influence of drugs at arrest), and **demographic-related** covariates (age at arrest, race, sex, citizenship, veteran status, education level, and whether homeless in 12 months prior to offense). Policy-related covariates matter because of changes in pre-trial detention policy over time (such as during the "tough on crime" era in the 1980s and early 1990s) and across states and jurisdictions. The charge-related covariates represent all the offense-related information available in the ICPSR data, information which would have been available to the district attorneys and judges overseeing these cases and making decisions about bond and detention. And demographic-related covariates allow us to look for discrepancies in treatment between groups of people.
+
+**Figure 3: Distribution of Jail Time by Race of Incarcerated Individual**
+
+```{r fig.height=2}
+plot_box <- function(varname_c, dataset){
+  p <- dataset %>%
+    mutate(victim_race = fct_infreq(victim_race)) %>%
+    filter(!is.na(jail_time)) %>%
+    ggplot(aes(x = jail_time, y = fct_reorder(get(varname_c), jail_time, .fun = mean, .desc = TRUE))) +
+    geom_boxplot() +
+    coord_cartesian(xlim = c(0, 3 * 365)) +
+    scale_x_continuous(breaks = seq(0, 4 * 365, 365), 
+                       labels = label_number(accuracy = 1, scale = 1 / 365)) +
+    labs(x = NULL) +
+    theme_minimal()
   
-  return(p1)
+  return(p)
 }
 
-get_nas("age_at_arrest")
-get_nas("arrest_year_range")
-get_nas("admit_year")
-get_nas("sex")
-get_nas("race")
-get_nas("citizen")
-get_nas("military")
-get_nas("education")
-get_nas("homeless_12mo_prior")
-get_nas("held_by")
-get_nas("sentenced")
-get_nas("controlling_offense")
-get_nas("controlling_offense_type")
-get_nas("arrested_during_status")
-get_nas("firearm_at_offense")
-get_nas("alc_at_offense")
-get_nas("drug_at_offense")
-get_nas("state")
+p1 <- plot_box("race", prison_nr) +
+  labs(y = "Race",
+       x = "Time Spent in Jail (years)",
+       caption = "*x-axis truncated to jail time 3 years and under for readability")
+
+p1
 ```
 
-**Figure 3: Distribution of Predictors**
+Before controlling for covariates, mean jail time seems lowest for white incarcerated individuals and highest for Black individuals and those who did not report their race. The discrepancies between groups in Figure 3 may not appear large. However, in a world where just days or weeks in jail can make a difference in the resources and support networks available to incarcerated individuals, small discrepancies matter.
 
-```{r}
-prison %>%
-  filter(is.na(jail_time_served)) %>%
-  count(jail_time_served, sentenced)
+**Figure 4: Distribution of Jail Time for "Violent" Offenses by Victim Characteristics**
+
+```{r, fig.height=4}
+p5 <- prison_violent_nr %>%
+  mutate(victim_race = fct_infreq(victim_race)) %>%
+  ggplot(aes(y = victim_race, fill = victim_race)) +
+  geom_bar() +
+  labs(x = "Individuals Incarcerated for Crimes Against",
+       y = "Race of Victim",
+       fill = NULL) +
+  scale_x_continuous(labels = label_number(accuracy = 1, scale = 1 / 1000, suffix = "K")) +
+  scale_fill_manual(values = cols) +
+  coord_flip() +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+        legend.position = "bottom")
+
+p2 <- plot_box("victim_sex", prison_violent_nr) +
+  labs(y = "Sex") +
+  theme(axis.text.x = element_blank(),
+        plot.title.position = "plot")
+
+p3 <- plot_box("victim_race", prison_violent_nr) +
+  labs(y = "Race") +
+  theme(axis.text.x = element_blank(),
+        plot.title.position = "plot") +
+  geom_boxplot(aes(fill = victim_race), show.legend = FALSE) +
+  scale_fill_manual(values = cols)
+
+p4 <- plot_box("victim_hispanic", prison_violent_nr) +
+  labs(y = "Hispanic",
+       x = "Time Spent in Jail (years)",
+       caption = "*x-axis truncated to jail time 3 years and under for readability") +
+  theme(plot.title.position = "plot")
+
+(p5 | ((p2 / p3/ p4) +
+  plot_layout(heights = c(1, 2, 1),
+              guides = "collect"))) +
+  plot_layout(guides = "collect") & theme(legend.position = "bottom")
 ```
 
+Data for our secondary analysis contains only individuals serving time for a primary offense labeled 'violent.' Victim information for those convicted of drug and property crimes, offenses which are often victimless or which lack easily identifiable victims, is largely missing. However, 64% of those with a violent primary offense did report victim race. Missingness patterns in victim sex and Hispanic ethnicity were similar. In Figure 4, we observe that individuals convicted of crimes against male victims appear to have a longer mean detention period pre-trial. Black and Indigenous victims see the highest mean pre-trial detention; white and multi-racial victims the lowest. Hispanic victims also appear to see higher mean jail time than non-Hispanic victims.
+
+#### Preliminary Analysis: Any Jail Time Served
+
+```{r binary-jailtimeserved-model}
+
+```
 
 
 ##### Question 1
 
-- Boxplots of distribution of jail time by race, sex, citizen, education, controlling offense type. Map of median jail time by state (since right skewed). Table of median and range of jail time across other predictors in the data set (possibly in appendix)
-- Three groups of confounders of interest: policy (arrest year, held by, state), charge details (controlling offense, arrested during status, firearm at offense, alcohol at offense, drugs at offense) and incarcerated individual characteristics (age at arrest, race, sex, citizen, military, education, homeless in 12 months prior to offense)
-
 ##### Question 2
 
 ```{r}
-glimpse(data_v)
+
 ```
 - Dataset for secondary analysis filtered for controlling offense type of violent, since this is the category which most frequently has victim information.
 - Missingness in victim information recoded as 'Not known/not reported': preliminary box plots examining differences in predictors between victim information reported and not known and a multinomial logistic model with victim_race as response and all policy/charge detail/individual characteristic confounders as predictors to look for patterns in missingness
