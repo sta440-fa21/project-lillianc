@@ -16,6 +16,7 @@ library(scales)
 library(RColorBrewer)
 library(patchwork)
 library(broom)
+library(kableExtra)
 ```
 
 ```{r load-data, message=FALSE}
@@ -246,6 +247,9 @@ Our goal is...
 ```{r prepare-survdata}
 survdata <- prison_filt %>%
   filter(!is.na(jail_time), jail_time > 0)
+
+survdata_victim <- survdata %>%
+  filter(controlling_offense_type == "Violent")
 ```
 
 ```{r survival-curve, fig.height=5}
@@ -314,11 +318,70 @@ To further examine the scale of this difference and incorporate confounders, we 
 
 $$ \log(T_i) = \beta_0 + \beta_1x_{1i} + \beta_2x_{2i} + ... + \epsilon_i $$
 
-We compare AFT models with Weibull, log-normal, log-logistic, and exponential hazard distributions in Appendix FIX THIS and conduct model selection with Kaplan-Meier residual plots under the survival functions of these distributions. These plots show the log-normal model performs well, that the curve of its distribution fits the residuals most closely and satisfies assumptions (see Appendix FIX THIS).
+We compare AFT models with Weibull, log-normal, log-logistic, and exponential hazard distributions in Appendix FIX THIS and conduct model selection with Kaplan-Meier residual plots under the survival functions of these distributions. These plots show the log-normal model performs well, that the curve of its distribution fits the residuals most closely and satisfies assumptions (see Appendix FIX THIS). As shown in the survival curves above, there are several different ways race is encoded in the data, either in 1) the groups white, Black, hispanic, other, American Indian/Alaska Native, Asian/Native Hawaiian/Other Pacific Islander, and not reported; 2) the groups white, non-white, and not reported; and 3) the groups Black, non-Black, and not reported. After model selection, we conducted variable selection via Akaike Information Criterion (AIC) and Bayesian Information Criterion (BIC) to determine which among these three variables to include as a confounder in our log-normal model. Both metrics select the model which labels individuals as white/non-white.
 
 In lieu of an AFT model, we could have pursued a Cox proportional hazards model. Although a semi-parametric model may have done better to capture the complexity in our data, a proportional hazards model would not do well to estimate the magnitude of the difference in jail time served between groups. Our goal is to ascertain how long individuals spend detained pretrial, not their instantaneous hazard rate of sentencing. Therefore, an AFT model is more appropriate for our analysis. Estimating survival times is possible with a Cox proportional hazards model throuogh Breslow estimator calculations, but AFT model coefficients provide a more straightforward approach. CHECK THIS Our two assumptions in this approach are that individuals with censored jail times have the same survival prospects as those without censoring at every point in time and that survival probability functions have remained roughly constant over the period of data collection.
 
 ***2.3 Secondary Analysis: Jail Time by Victim Characteristics***
+
+```{r survival-curve-victim, fig.height=5}
+psurv1 <- ggsurvplot(survfit(Surv(jail_time, censored) ~ victim_race, 
+                   data = survdata_victim[survdata_victim$victim_race %in% 
+                                            c("White", "Black", "Not Reported"), ]), 
+     xlab = "Days in Jail*", ylab = "Estimated Survival Probability",
+     #legend.labs = c("Black", "Not Reported", "White"),
+     legend.title = "",
+     legend = c(0.75, 0.85),
+     ylim = c(0, 1),
+     xlim = c(0, 365 * 3),
+     conf.int = T, censor = F,
+     ggtheme = theme_minimal(),
+     palette = cols)
+
+psurv2 <- ggsurvplot(survfit(Surv(jail_time, censored) ~ victim_race, 
+                   data = survdata_victim[survdata_victim$victim_race %in% c("American Indian/Alaska Native", 
+                                                        "Asian/Native Hawaiian/Other Pacific Islander",
+                                                        "Hispanic",
+                                                        "Multiple"), ]), 
+     xlab = "Days in Jail*", ylab = NULL,
+     #legend.labs = c("American Indian/Alaska Native", "Asian/Native Hawaiian/Other Pacific Islander", 
+     #                "Multiracial"),
+     caption = "*Survival curves plotted separately for most/least common racial groups in data and 
+     and truncated to jail times 3 years and under for readability",
+     legend.title = "",
+     legend = c(0.65, 0.9),
+     ylim = c(0, 1),
+     xlim = c(0, 365 * 3),
+     conf.int = T, censor = F,
+     ggtheme = theme_minimal(),
+     palette = cols[4:7])
+
+psurv3 <- ggsurvplot(survfit(Surv(jail_time, censored) ~ victim_race_white, 
+                   data = survdata_victim), 
+     xlab = "Days in Jail", ylab = "Estimated Survival Probability",
+     legend.labs = c("Victim of color", "Race not reported", "White victim"),
+     legend.title = "",
+     legend = c(0.5, 0.5),
+     ylim = c(0, 1),
+     xlim = c(0, 365 * 10),
+     conf.int = T, censor = F,
+     ggtheme = theme_minimal(),
+     palette = cols)
+
+# https://stackoverflow.com/questions/59951004/arrange-ggsurv-plots-with-one-shared-legend
+((psurv1$plot | psurv2$plot) / psurv3$plot) +
+  plot_layout()
+
+logrank_test <- survdiff(Surv(jail_time, censored) ~ victim_race_white, data = survdata_victim)
+logrank_p <- glance(logrank_test)$p.value[[1]]
+tidy_logrank <- tidy(logrank_test) %>%
+  mutate(calc_oe = ((obs - exp) ^ 2) / exp,
+         calc_oez = ((obs - exp) ^ 2 ) / diag(logrank_test$var),
+         victim_race_white = case_when(
+           victim_race_white == "Y" ~ "White",
+           victim_race_white == "N" ~ "Non-white",
+           TRUE ~ victim_race_white))
+```
 
 ## 3. Results
 
@@ -331,13 +394,37 @@ In lieu of an AFT model, we could have pursued a Cox proportional hazards model.
 ***3.2 Primary Analysis***
 
 ```{r}
-
 aft_ln <- survreg(Surv(jail_time, censored) ~ controlling_offense + arrested_during_status 
                   + firearm_at_offense + alc_at_offense + drug_at_offense 
                   + arrest_year_range + held_by + state 
-                  + age_at_arrest + race + sex + citizen + military + education + homeless_12mo_prior, 
+                  + age_at_arrest + race_white + sex + citizen + military + education + homeless_12mo_prior, 
                   data = survdata, 
                   dist = "lognormal")
+
+tidy_aft <- tidy(aft_ln)
+tidy_aft$p.value <- pvalue(tidy_aft$p.value,
+                              accuracy = 0.001, 
+                              decimal.mark = ".",
+                              add_p = FALSE)
+kable_styling(kable(tidy_aft, digits = c(3,3,3,3), 
+                    caption = "AFT (log-normal) Model Output (with confounders)",
+                    col.names = c("Model Term", "Estimate", "Standard Error", "Test Statistic", "p-Value")),
+              latex_options = "HOLD_position")
+```
+
+***3.3 Secondary Analysis***
+
+## 4. Discussion
+
+***4.1 Conclusions***
+
+***4.2 Limitations and Future Directions***
+
+***4.3 Summary***
+
+## Appendix 
+
+```{r}
 
 aft_e <- survreg(Surv(jail_time, censored) ~ controlling_offense + arrested_during_status 
                   + firearm_at_offense + alc_at_offense + drug_at_offense 
@@ -359,22 +446,6 @@ aft_l <- survreg(Surv(jail_time, censored) ~ controlling_offense + arrested_duri
                   + age_at_arrest + race + sex + citizen + military + education + homeless_12mo_prior, 
                   data = survdata, 
                  dist = "loglogistic")
-
-coxm1 <- coxph(Surv(jail_time, censored) ~ controlling_offense + arrested_during_status 
-                  + firearm_at_offense + alc_at_offense + drug_at_offense 
-                  + arrest_year_range + held_by + state 
-                  + age_at_arrest + race + sex + citizen + military + education + homeless_12mo_prior, 
-                  data = survdata)
-
-#names(coxm1$coefficients) <- c("One-and-Done Status",
-#                                "Plays Position F",
-#                                "Plays Position G",
-#                                "Player Height (in)",
-#                                "Foreign Nationality")
-
-#ggcoxdiagnostics(coxm1, type = "schoenfeld", title = "Figure 8: Schoenfeld Residuals of Cox PH Model with All Confounders",
-#                 xlab = "Observation ID", ylab = "Schoenfeld Residuals")
-
 
 resids <- (log(survdata$jail_time) - aft_ln$linear.predictors) / (aft_ln$scale)
 m1 <- survfit(Surv(resids, censored) ~ 1, data = survdata)
@@ -407,15 +478,96 @@ exp.y <- plogis(exp.x, lower.tail = F)
 lines(exp.x, exp.y, col = "red", lwd = 2)
 ```
 
-***3.3 Secondary Analysis***
 
-## 4. Discussion
+```{r}
+aft_ln <- survreg(Surv(jail_time, censored) ~ controlling_offense + arrested_during_status 
+                  + firearm_at_offense + alc_at_offense + drug_at_offense 
+                  + arrest_year_range + held_by + state 
+                  + age_at_arrest + race_white + sex + citizen + military + education + homeless_12mo_prior
+                  + victim_race + victim_sex + victim_known + victim_hispanic + victim_age, 
+                  data = survdata_victim, 
+                  dist = "lognormal")
 
-***4.1 Conclusions***
+aft_ln2 <- survreg(Surv(jail_time, censored) ~ controlling_offense + arrested_during_status 
+                  + firearm_at_offense + alc_at_offense + drug_at_offense 
+                  + arrest_year_range + held_by + state 
+                  + age_at_arrest + race_white + sex + citizen + military + education + homeless_12mo_prior
+                  + victim_race_black + victim_sex + victim_known + victim_hispanic + victim_age, 
+                  data = survdata_victim, 
+                  dist = "lognormal")
 
-***4.2 Limitations and Future Directions***
+aft_ln3 <- survreg(Surv(jail_time, censored) ~ controlling_offense + arrested_during_status 
+                  + firearm_at_offense + alc_at_offense + drug_at_offense 
+                  + arrest_year_range + held_by + state 
+                  + age_at_arrest + race_white + sex + citizen + military + education + homeless_12mo_prior
+                  + victim_race_white + victim_sex + victim_known + victim_hispanic + victim_age, 
+                  data = survdata_victim, 
+                  dist = "lognormal")
 
-***4.3 Summary***
+aft_e <- survreg(Surv(jail_time, censored) ~ controlling_offense + arrested_during_status 
+                  + firearm_at_offense + alc_at_offense + drug_at_offense 
+                  + arrest_year_range + held_by + state 
+                  + age_at_arrest + race + sex + citizen + military + education + homeless_12mo_prior
+                  + victim_race + victim_sex + victim_known + victim_hispanic + victim_age, 
+                  data = survdata_victim,  
+                 dist = "exponential")
+
+aft_w <- survreg(Surv(jail_time, censored) ~ controlling_offense + arrested_during_status 
+                  + firearm_at_offense + alc_at_offense + drug_at_offense 
+                  + arrest_year_range + held_by + state 
+                  + age_at_arrest + race + sex + citizen + military + education + homeless_12mo_prior
+                  + victim_race + victim_sex + victim_known + victim_hispanic + victim_age, 
+                  data = survdata_victim, 
+                 dist = "weibull")
+
+aft_l <- survreg(Surv(jail_time, censored) ~ controlling_offense + arrested_during_status 
+                  + firearm_at_offense + alc_at_offense + drug_at_offense 
+                  + arrest_year_range + held_by + state 
+                  + age_at_arrest + race + sex + citizen + military + education + homeless_12mo_prior
+                  + victim_race + victim_sex + victim_known + victim_hispanic + victim_age, 
+                  data = survdata_victim, 
+                 dist = "loglogistic")
+
+resids <- (log(survdata_victim$jail_time) - aft_ln$linear.predictors) / (aft_ln$scale)
+m1 <- survfit(Surv(resids, censored) ~ 1, data = survdata_victim)
+plot(m1, xlab = "AFT Residuals", 
+     ylab = "Survival Probability", 
+     main = "Log-Normal Model with All Confounders")
+exp.x <- seq(min(resids), max(resids), length = 100)
+exp.y <- pnorm(exp.x, lower.tail = F)
+lines(exp.x, exp.y, col = "red", lwd = 2)
+
+resids <- (log(survdata_victim$jail_time) - aft_e$linear.predictors) / (aft_e$scale)
+plot(m1, xlab = "AFT Residuals", 
+     ylab = "Survival Probability", 
+     main = "Exponential Model with All Confounders")
+exp.y <- exp(-exp(exp.x))
+lines(exp.x, exp.y, col = "red", lwd = 2)
+
+resids <- (log(survdata_victim$jail_time) - aft_w$linear.predictors) / (aft_w$scale)
+plot(m1, xlab = "AFT Residuals", 
+     ylab = "Survival Probability", 
+     main = "Weibull Model with All Confounders")
+exp.y <- exp(-exp(exp.x))
+lines(exp.x, exp.y, col = "red", lwd = 2)
+
+resids <- (log(survdata_victim$jail_time) - aft_l$linear.predictors) / (aft_l$scale)
+plot(m1, xlab = "AFT Residuals", 
+     ylab = "Survival Probability", 
+     main = "Logistic Model with All Confounders")
+exp.y <- plogis(exp.x, lower.tail = F)
+lines(exp.x, exp.y, col = "red", lwd = 2)
+
+AIC <- c(AIC(aft_ln), AIC(aft_ln2), AIC(aft_ln3))
+BIC <- c(BIC(aft_ln), BIC(aft_ln2), BIC(aft_ln3))
+
+var_select <- as.data.frame(t(tibble(AIC, BIC)))
+
+kable(var_select, digits = c(1, 1, 1, 1, 1), 
+      caption = "AIC and BIC for Log-normal AFT Models by Race Encoding Method",
+      col.names = c("Race complete", "Race Black/non-Black", "Race white/non-white")) %>%
+  kable_styling(latex_options = "HOLD_position")
+```
 
 While survival analysis would allow for incorporation of individuals who have not yet been sentenced into the analysis, those individuals account for less than 2% of the data overall. A much greater proportion of individuals in the data (8.3%) were recorded as spending 0 days in jail. These individuals are important to consider. They likely represent a group that could afford to post bail or pay a bail bondsman, or in states with different pretrial detention policies that don't rely on money bail. In recent years, places like New Jersey and Washington D.C. have made this shift. California has also attempted to make some reforms. So in order to be able to incorporate these individuals, I will conduct multiple linear regression.
 

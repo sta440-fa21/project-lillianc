@@ -160,6 +160,14 @@ prison_filt %<>%
     race_black = case_when(
       race == "Black" ~ "Y",
       race == "Not Reported" ~ race,
+      TRUE ~ "N"),
+    victim_race_white = case_when(
+      victim_race == "White" ~ "Y",
+      victim_race == "Not Reported" ~ victim_race,
+      TRUE ~ "N"),
+    victim_race_black = case_when(
+      victim_race == "Black" ~ "Y",
+      victim_race == "Not Reported" ~ victim_race,
       TRUE ~ "N"))
 
 write_csv(prison_filt, "data/prison-clean.csv")
