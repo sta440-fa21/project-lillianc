@@ -3,8 +3,12 @@ title: 'Waiting for Trial: A Case Study of Detention Times Prior to Sentencing'
 author: "Lillian Clark"
 date: "12/7/2021"
 output: pdf_document
-geometry: "margin=0.75in"
+geometry: "left=0.75in,right=0.75in,top=1in,bottom=1in"
+header-includes:
+    - \usepackage{caption}
 ---
+
+\captionsetup[table]{labelformat=empty}
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
@@ -387,7 +391,21 @@ m1 <- multinom(jail_time_served ~ controlling_offense + arrested_during_status
 **Table 1: Multinomial Logistic Model Output**
 
 ```{r multinomial-results}
-tidy_multinom <- tidy(m1, exponentiate = FALSE)
+tidy_multinom <- tidy(m1, exponentiate = FALSE) %>%
+  rowwise() %>%
+  mutate(term1 = str_split(term, "[:upper:]"),
+         term1 = term1[[1]],
+         term1 = str_to_title(str_replace_all(term1, "_", " ")),
+         term1 = str_remove(term1, "\\d+-\\d+$"),
+         term1 = str_remove(term1, "\\d+ To \\d+$"),
+         term1 = str_remove(term1, "\\d+ Or $"),
+         term2 = case_when(
+           str_detect(term, "[:lower:]\\d") ~ str_extract(term, "\\d.+"),
+           TRUE ~ str_extract(term, "[:upper:].*")),
+         term2 = str_replace(term2, "Y$", "Yes"),
+         term = ifelse(str_detect(term, "\\("), term, paste0(term1, ": ", term2)),
+         term = str_replace(term, "12mo", "in 12 Months")) %>%
+  select(-term1, -term2)
 
 tidy_multinom$p.value <- pvalue(tidy_multinom$p.value,
                               accuracy = 0.001, 
@@ -395,9 +413,9 @@ tidy_multinom$p.value <- pvalue(tidy_multinom$p.value,
                               add_p = FALSE)
 
 tidy_multinom_sig <- tidy_multinom %>%
-  filter((str_detect(term, "age_at_arrest") | str_detect(term, "race") | str_detect(term, "sex")
-         | str_detect(term, "citizen") | str_detect(term, "military") 
-         | str_detect(term, "education") | str_detect(term, "homeless_12mo_prior")) &
+  filter((str_detect(term, "Age at Arrest") | str_detect(term, "Race") | str_detect(term, "Sex")
+         | str_detect(term, "Citizen") | str_detect(term, "Military") 
+         | str_detect(term, "Education") | str_detect(term, "Homeless in 12 Months Prior")) &
          p.value <= 0.05)
 
 kable_styling(kbl(tidy_multinom_sig, digits = c(3,3,3,3), 
@@ -405,11 +423,11 @@ kable_styling(kbl(tidy_multinom_sig, digits = c(3,3,3,3),
                     col.names = c("Y Level", "Model Term", "Estimate", 
                                   "Standard Error", "Test Statistic", "p-Value"),
                     format = "latex",
-                    booktabs = T, longtable = T),
+                    booktabs = T, longtable = T, linesep = ""),
               latex_options = c("repeat_header"))
 ```
 
-Only demographic-related covariates found to be significant at the 0.05 alpha level are displayed above (see Appendix 1 for full model output and baseline values). Race only appears significant when comparing those who did not report whether they served jail time to those who did not serve jail time. Interestingly, holding all else constant, lack of citizenship and recent homelessness are associated with increased odds of serving jail time as compared to the baseline (U.S. citizenship and no recent homelessness). Education levels, again holding all else constant, appear to have some of the largest effect sizes when comparing those assigned jail time to those who were not detained pretrial. Also, we observe on average increased odds of not reporting jail time compared to serving no jail time for Indigenous individuals, holding all else constant.
+Only demographic-related covariates found to be significant at the 0.05 alpha level are displayed above (see Appendix 1 for full model output). Race only appears significant when comparing those who did not report whether they served jail time to those who did not serve jail time. Interestingly, holding all else constant, lack of citizenship and recent homelessness are associated with increased odds of serving jail time as compared to the baseline (U.S. citizenship and no recent homelessness). Education levels, again holding all else constant, appear to have some of the largest effect sizes when comparing those assigned jail time to those who were not detained pretrial. Also, we observe on average increased odds of not reporting jail time compared to serving no jail time for Indigenous individuals, holding all else constant.
 
 ***3.2 Primary Analysis***
 
@@ -423,27 +441,42 @@ aft_ln3 <- survreg(Surv(jail_time, censored) ~ controlling_offense + arrested_du
                   data = survdata, 
                   dist = "lognormal")
 
-tidy_aft1 <- tidy(aft_ln3)
+tidy_aft1 <- tidy(aft_ln3) %>%
+  rowwise() %>%
+  mutate(term1 = str_split(term, "[:upper:]"),
+         term1 = term1[[1]],
+         term1 = str_to_title(str_replace_all(term1, "_", " ")),
+         term1 = str_remove(term1, "\\d+-\\d+$"),
+         term1 = str_remove(term1, "\\d+ To \\d+$"),
+         term1 = str_remove(term1, "\\d+ Or $"),
+         term2 = case_when(
+           str_detect(term, "[:lower:]\\d") ~ str_extract(term, "\\d.+"),
+           TRUE ~ str_extract(term, "[:upper:].*")),
+         term2 = str_replace(term2, "Y$", "Yes"),
+         term = ifelse(str_detect(term, "\\("), term, paste0(term1, ": ", term2)),
+         term = str_replace(term, "12mo", "in 12 Months")) %>%
+  select(-term1, -term2)
+
 tidy_aft1$p.value <- pvalue(tidy_aft1$p.value,
                               accuracy = 0.001, 
                               decimal.mark = ".",
                               add_p = FALSE)
 
 tidy_aft1_sig <- tidy_aft1 %>%
-  filter((str_detect(term, "age_at_arrest") | str_detect(term, "race") | str_detect(term, "sex")
-         | str_detect(term, "citizen") | str_detect(term, "military") 
-         | str_detect(term, "education") | str_detect(term, "homeless_12mo_prior")) &
+  filter((str_detect(term, "Age at Arrest") | str_detect(term, "Race") | str_detect(term, "Sex")
+         | str_detect(term, "Citizen") | str_detect(term, "Military") 
+         | str_detect(term, "Education") | str_detect(term, "Homeless in 12 Months Prior")) &
            p.value <= 0.05)
 
 kable_styling(kbl(tidy_aft1_sig, digits = c(3,3,3,3), 
                     caption = NULL,
                     col.names = c("Model Term", "Estimate", "Standard Error", "Test Statistic", "p-Value"),
                     format = "latex",
-                    booktabs = T, longtable = T),
+                    booktabs = T, longtable = T, linesep = ""),
               latex_options = c("repeat_header"))
 ```
 
-Again, only demographic-related covariates found to be significant at the 0.05 alpha level are displayed above (see Appendix 2 for full model output and baseline values). As shown by the model output, certain values of age, race, sex, citizenship status, and education level are significant. Non-white race is the baseline for the model, so we can say that we expect white individuals to spend approximately 0.95 times fewer days in jail than individuals of color, holding all else constant. For the median non-zero jail time in the dataset, 243 days, a survival time multiplied by a factor of 0.95 would mean roughly 12 fewer days in jail. Thus, there is evidence that an individual's race is associated with the time they are detained pretrial.
+Again, only demographic-related covariates found to be significant at the 0.05 alpha level are displayed above (see Appendix 2 for full model output). As shown by the model output, certain values of age, race, sex, citizenship status, and education level are significant. Non-white race is the baseline for the model, so we can say that we expect white individuals to spend approximately 0.95 times fewer days in jail than individuals of color, holding all else constant. For the median non-zero jail time in the dataset, 243 days, a survival time multiplied by a factor of 0.95 would mean roughly 12 fewer days in jail. Thus, there is evidence that an individual's race is associated with the time they are detained pretrial.
 
 ***3.3 Secondary Analysis***
 
@@ -458,28 +491,43 @@ aft_ln3_v <- survreg(Surv(jail_time, censored) ~ controlling_offense + arrested_
                   data = survdata_victim, 
                   dist = "lognormal")
 
-tidy_aft2 <- tidy(aft_ln3_v)
+tidy_aft2 <- tidy(aft_ln3_v) %>%
+  rowwise() %>%
+  mutate(term1 = str_split(term, "[:upper:]"),
+         term1 = term1[[1]],
+         term1 = str_to_title(str_replace_all(term1, "_", " ")),
+         term1 = str_remove(term1, "\\d+-\\d+$"),
+         term1 = str_remove(term1, "\\d+ To \\d+$"),
+         term1 = str_remove(term1, "\\d+ Or $"),
+         term2 = case_when(
+           str_detect(term, "[:lower:]\\d") ~ str_extract(term, "\\d.+"),
+           TRUE ~ str_extract(term, "[:upper:].*")),
+         term2 = str_replace(term2, "Y$", "Yes"),
+         term = ifelse(str_detect(term, "\\("), term, paste0(term1, ": ", term2)),
+         term = str_replace(term, "12mo", "in 12 Months")) %>%
+  select(-term1, -term2)
+
 tidy_aft2$p.value <- pvalue(tidy_aft2$p.value,
                               accuracy = 0.001, 
                               decimal.mark = ".",
                               add_p = FALSE)
 
 tidy_aft2_sig <- tidy_aft2 %>%
-  filter((str_detect(term, "age_at_arrest") | str_detect(term, "race") | str_detect(term, "sex")
-         | str_detect(term, "citizen") | str_detect(term, "military") 
-         | str_detect(term, "education") | str_detect(term, "homeless_12mo_prior")
-         | str_detect(term, "victim")) &
+  filter((str_detect(term, "Age at Arrest") | str_detect(term, "Race") | str_detect(term, "Sex")
+         | str_detect(term, "Citizen") | str_detect(term, "Military") 
+         | str_detect(term, "Education") | str_detect(term, "Homeless in 12 Months Prior")
+         | str_detect(term, "Victim")) &
            p.value <= 0.05)
 
 kable_styling(kbl(tidy_aft2_sig, digits = c(3,3,3,3), 
                     caption = NULL,
                     col.names = c("Model Term", "Estimate", "Standard Error", "Test Statistic", "p-Value"),
                     format = "latex",
-                    booktabs = T, longtable = T),
+                    booktabs = T, longtable = T, linesep = ""),
               latex_options = c("repeat_header"))
 ```
 
-See Appendix 3 for full model output and baseline values -- the results shown above are again limited to significant demographic covariates. Only one level of victim age (under 12 years old) is significant when compared to the baseline (victim 12 to 18 years old). All other victim traits were not significant at the 0.05 alpha level. However, adding victim traits to the model did produce a different effect size for white race of incarcerated individual compared to non-white race. With this model, we can say that we expect white individuals to spend approximately 0.89 times fewer days in jail than individuals of color, holding all else constant. For the median non-zero jail time in the dataset, this multiplication of survival time would mean roughly 27 fewer days in jail.
+See Appendix 3 for full model output -- the results shown above are again limited to significant demographic covariates. Only one level of victim age (under 12 years old) is significant when compared to the baseline (victim 12 to 18 years old). All other victim traits were not significant at the 0.05 alpha level. However, adding victim traits to the model did produce a different effect size for white race of incarcerated individual compared to non-white race. With this model, we can say that we expect white individuals to spend approximately 0.89 times fewer days in jail than individuals of color, holding all else constant. For the median non-zero jail time in the dataset, this multiplication of survival time would mean roughly 27 fewer days in jail.
 
 ## 4. Discussion
 
@@ -541,9 +589,145 @@ We assume the data in our multinomial logistic model are case specific, where ea
 
 **Figure 6: Model Diagnostics: Binned Residuals vs. Predicted Probabilities**
 
-**Figure 7: Model Diagnostics: Average Residuals for Categorical Predictor Variables**
+```{r pred-prob-residuals}
+pred_probs <- as_tibble(predict(m1, type = "probs")) %>% 
+                        mutate(obs_num = 1:n())
+residuals <- as_tibble(residuals(m1)) %>% 
+  setNames(paste('resid.', names(.), sep = "")) %>%
+  mutate(obs_num = 1:n())
 
-**Table 4: Full Multinomial Logistic Results**
+prison_filt_multinom <- prison_filt_multinom %>%
+  mutate(obs_num = 1:n())
+pfm_aug <- inner_join(prison_filt_multinom, pred_probs, by = "obs_num") 
+pfm_aug <- inner_join(pfm_aug, residuals, by = "obs_num")
+names(pfm_aug) <- make.names(names(pfm_aug), unique = TRUE)
+
+par(mfrow=c(2,2))
+
+arm::binnedplot(x = pfm_aug$No, y = pfm_aug$resid.No, xlab = "Predicted Probability", 
+                main = "No Jail Time", col.int = FALSE)
+arm::binnedplot(x = pfm_aug$Yes, y = pfm_aug$resid.Yes, xlab = "Predicted Probability", 
+                main = "Some Jail Time", col.int = FALSE)
+arm::binnedplot(x = pfm_aug$Not.Reported, y = pfm_aug$resid.Not.Reported, xlab = "Predicted Probability", 
+                main = "Jail Time Not Reported", col.int = FALSE)
+```
+
+The plots of residuals appear fairly evenly spread around 0 and the model statisfies this diagnostic test.
+
+**Table 4: Model Diagnostics: Average Residuals for Categorical Predictor Variables**
+
+```{r average-residuals}
+get_ave_resiudals <- function(varname_c, title){
+  tab <- pfm_aug %>%
+  group_by(get(varname_c)) %>%
+  summarise(`No Jail Time` = round(mean(resid.No), 4), 
+            `Some Jail Time` = round(mean(resid.Yes), 4), 
+            `Jail Time Not Reported` = round(mean(resid.Not.Reported), 4)) %>%
+  t()
+  
+  tab <- as.data.frame(tab)
+  
+  colnames(tab) <- tab[1, ]
+  
+  tab <- tab[-1, ]
+  
+  tab <- as.data.frame(t(tab))
+  
+  return(tab)
+}
+
+kable_styling(kbl(get_ave_resiudals("race"), digits = c(3,3,3), 
+                  caption = paste0("Average Residuals for Race"),
+                  format = "latex",
+                  booktabs = T, longtable = T),
+            latex_options = c("repeat_header"))
+
+kable_styling(kbl(get_ave_resiudals("sex"), digits = c(3,3,3), 
+                  caption = paste0("Average Residuals for Sex"),
+                  format = "latex",
+                  booktabs = T, longtable = T),
+            latex_options = c("repeat_header"))
+
+kable_styling(kbl(get_ave_resiudals("citizen"), digits = c(3,3,3), 
+                  caption = paste0("Average Residuals for Citizenship Status"),
+                  format = "latex",
+                  booktabs = T, longtable = T),
+            latex_options = c("repeat_header"))
+
+kable_styling(kbl(get_ave_resiudals("military"), digits = c(3,3,3), 
+                  caption = paste0("Average Residuals for Veteran Status"),
+                  format = "latex",
+                  booktabs = T, longtable = T),
+            latex_options = c("repeat_header"))
+
+kable_styling(kbl(get_ave_resiudals("education"), digits = c(3,3,3), 
+                  caption = paste0("Average Residuals for Education Level"),
+                  format = "latex",
+                  booktabs = T, longtable = T),
+            latex_options = c("repeat_header"))
+
+kable_styling(kbl(get_ave_resiudals("homeless_12mo_prior"), digits = c(3,3,3), 
+                  caption = paste0("Average Residuals for Homelessness in 12 Months Prior"),
+                  format = "latex",
+                  booktabs = T, longtable = T),
+            latex_options = c("repeat_header"))
+
+kable_styling(kbl(get_ave_resiudals("held_by"), digits = c(3,3,3), 
+                  caption = paste0("Average Residuals for Authority Held By"),
+                  format = "latex",
+                  booktabs = T, longtable = T),
+            latex_options = c("repeat_header"))
+
+kable_styling(kbl(get_ave_resiudals("state"), digits = c(3,3,3), 
+                  caption = paste0("Average Residuals for State"),
+                  format = "latex",
+                  booktabs = T, longtable = T),
+            latex_options = c("repeat_header"))
+
+kable_styling(kbl(get_ave_resiudals("controlling_offense"), digits = c(3,3,3), 
+                  caption = paste0("Average Residuals for Primary Offense"),
+                  format = "latex",
+                  booktabs = T, longtable = T),
+            latex_options = c("repeat_header"))
+
+kable_styling(kbl(get_ave_resiudals("arrested_during_status"), digits = c(3,3,3), 
+                  caption = paste0("Average Residuals for Legal Status at Arrest"),
+                  format = "latex",
+                  booktabs = T, longtable = T),
+            latex_options = c("repeat_header"))
+
+kable_styling(kbl(get_ave_resiudals("firearm_at_offense"), digits = c(3,3,3), 
+                  caption = paste0("Average Residuals for Firearm Present at Offense"),
+                  format = "latex",
+                  booktabs = T, longtable = T),
+            latex_options = c("repeat_header"))
+
+kable_styling(kbl(get_ave_resiudals("alc_at_offense"), digits = c(3,3,3), 
+                  caption = paste0("Average Residuals for Under the Influence of Alcohol at Offense"),
+                  format = "latex",
+                  booktabs = T, longtable = T),
+            latex_options = c("repeat_header"))
+
+kable_styling(kbl(get_ave_resiudals("drug_at_offense"), digits = c(3,3,3), 
+                  caption = paste0("Average Residuals for Under the Influence of Drugs at Offense"),
+                  format = "latex",
+                  booktabs = T, longtable = T),
+            latex_options = c("repeat_header"))
+
+kable_styling(kbl(get_ave_resiudals("age_at_arrest"), digits = c(3,3,3), 
+                  caption = paste0("Average Residuals for Age at Arrest"),
+                  format = "latex",
+                  booktabs = T, longtable = T),
+            latex_options = c("repeat_header"))
+
+kable_styling(kbl(get_ave_resiudals("arrest_year_range"), digits = c(3,3,3), 
+                  caption = paste0("Average Residuals for Arrest Year Range"),
+                  format = "latex",
+                  booktabs = T, longtable = T),
+            latex_options = c("repeat_header"))
+```
+
+**Table 5: Full Multinomial Logistic Results**
 
 ```{r full-multinom-results}
 tidy_multinom_full <- tidy_multinom %>%
@@ -562,13 +746,13 @@ The baseline individual for the multinomial logistic model has
 
 ***Appendix 2: Primary Survival Analysis***
 
-**Figure 8: Additional Survival Curves for Race of Incarcerated Individual**
+**Figure 7: Additional Survival Curves for Race of Incarcerated Individual**
 
 ```{r addtl-survival-curves}
 psurv1$plot | psurv2$plot
 ```
 
-**Table 5: Log-rank Test for White/Non-white Incarcerated Individual**
+**Table 6: Log-rank Test for White/Non-white Incarcerated Individual**
 
 ```{r log-rank-table}
 kable_styling(kable(tidy_logrank, digits = c(2, 2, 2, 2, 2), 
@@ -580,7 +764,7 @@ kable_styling(kable(tidy_logrank, digits = c(2, 2, 2, 2, 2),
 
 A log-rank test of jailtime by race white/non-white reveals a difference between the two groups, a powerful observation because we find empirical evidence of proportional hazard and further modeling confirms this discrepancy.
 
-**Figure 9: Kaplan-Meier Residual Plots of AFT Model Candidates**
+**Figure 8: Kaplan-Meier Residual Plots of AFT Model Candidates**
 
 ```{r all-aft-plots}
 par(mfrow=c(2,2))
@@ -660,7 +844,7 @@ lines(exp.x, exp.y, col = "red", lwd = 2)
 
 We assume predictors have a multiplicative effect on survival time, and a KM residual plot for the log-normal AFT model shows this is satisfied. The fit is not perfect, but a log-normal model outperforms the other models evaluated above.
 
-**Table 6: Race Variable Selection**
+**Table 7: Race Variable Selection**
 
 ```{r aic-bic}
 AIC <- c(AIC(aft_ln), AIC(aft_ln2), AIC(aft_ln3))
@@ -676,7 +860,7 @@ kable(var_select, digits = c(1, 1, 1, 1, 1),
 
 Variable selection among AFT log-normal models with different race encoding methods was performed as discussed in methodology, via AIC and BIC.
 
-**Table 7: Full Primary Survival Anaylsis Results**
+**Table 8: Full Primary Survival Anaylsis Results**
 
 ```{r full-primary-results}
 kable_styling(kbl(tidy_aft1, digits = c(3,3,3,3), 
@@ -689,13 +873,13 @@ kable_styling(kbl(tidy_aft1, digits = c(3,3,3,3),
 
 ***Appendix 3: Secondary Survival Analysis (Victim Traits)***
 
-**Figure 10: Additional Survival Curves for Race of Victim**
+**Figure 9: Additional Survival Curves for Race of Victim**
 
 ```{r addtl-survival-curves-victim}
 psurv1_v$plot | psurv2_v$plot
 ```
 
-**Table 8: Log-rank Test for White/Non-white Victim**
+**Table 9: Log-rank Test for White/Non-white Victim**
 
 ```{r log-rank-table-victim}
 kable_styling(kable(tidy_logrank_victim, digits = c(2, 2, 2, 2, 2), 
@@ -707,7 +891,7 @@ kable_styling(kable(tidy_logrank_victim, digits = c(2, 2, 2, 2, 2),
 
 A log-rank test of jail time by victim race white/non-white reveals a difference between the two groups, however, this is contradicted by later modeling with additional confounders.
 
-**Figure 11: Kaplan-Meier Residual Plots of AFT Model Candidates**
+**Figure 10: Kaplan-Meier Residual Plots of AFT Model Candidates**
 
 ```{r all-aft-plots-victim}
 par(mfrow=c(2,2))
@@ -793,7 +977,7 @@ lines(exp.x, exp.y, col = "red", lwd = 2)
 
 We assume predictors have a multiplicative effect on survival time, and a KM residual plot for the log-normal AFT model shows this is satisfied. The fit is not perfect, but a log-normal model outperforms the other models evaluated above.
 
-**Table 9: Race Variable Selection**
+**Table 10: Race Variable Selection**
 
 ```{r aic-bic-victim}
 AIC <- c(AIC(aft_ln), AIC(aft_ln2), AIC(aft_ln3))
@@ -809,7 +993,7 @@ kable(var_select, digits = c(1, 1, 1, 1, 1),
 
 Variable selection among AFT log-normal models with different race encoding methods was performed as discussed in methodology, via AIC and BIC.
 
-**Table 10: Full Primary Survival Anaylsis Results**
+**Table 11: Full Primary Survival Anaylsis Results**
 
 ```{r full-secondary-results}
 kable_styling(kbl(tidy_aft2, digits = c(3,3,3,3), 
