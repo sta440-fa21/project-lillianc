@@ -17,6 +17,7 @@ library(RColorBrewer)
 library(patchwork)
 library(broom)
 library(kableExtra)
+library(nnet)
 ```
 
 ```{r load-data, message=FALSE}
@@ -234,13 +235,11 @@ Due to the research cited above and preliminary data visualization, we hypothesi
 
 Our first goal is to understand whether jail time served is associated with the race of the incarcerated individual. While survival analysis will allow for incorporation of individuals who have not yet been sentenced into our model, roughly 8% of the data consists of people who reported serving no jail time and would have survival time 0. These individuals are important to consider. They likely represent a group that could afford to post bail or pay a bail bondsman, or that live in states with pretrial detention policies that don't heavily rely on money bail, places like New Jersey and Washington D.C..^[citation] To consider those who were not detained pretrial before removing them from the data for survival analysis, we will first conduct multinomial logistic regression with the jail time served indicator as our response and policy, charge, and demographic covariates as predictors.
 
-```{r logistic-model}
-
-```
+We opt for multinomial logistic regression over binary logistic regression with only jail time served/not served as outcome in order to account for potential meaning in missingness in the data. Instead of filtering out those with jail time not reported, we consider "Not Reported" as a third outcome in our model. TALK ABOUT ASSUMPTIONS
 
 ***2.2 Primary Analysis: Racial Discrepancies in Jail Time***
 
-Our next goal is to observe whether an individual's race is associated with jail time, and if an association does exist, what is the effect size of race on pretrial detention.
+Our next goal is to observe whether an individual's race is associated with jail time, and if an association does exist, to understand the effect size of race on days in pretrial detention.
 
 **Figure n: Survival Curves for Race of Incarcerated Individual**
 
@@ -324,6 +323,8 @@ In lieu of an AFT model, we could have pursued a Cox proportional hazards model.
 
 ***2.3 Secondary Analysis: Jail Time by Victim Characteristics***
 
+**Figure n: Title**
+
 ```{r survival-curve-victim, fig.height=5}
 psurv1 <- ggsurvplot(survfit(Surv(jail_time, censored) ~ victim_race, 
                    data = survdata_victim[survdata_victim$victim_race %in% 
@@ -341,11 +342,10 @@ psurv1 <- ggsurvplot(survfit(Surv(jail_time, censored) ~ victim_race,
 psurv2 <- ggsurvplot(survfit(Surv(jail_time, censored) ~ victim_race, 
                    data = survdata_victim[survdata_victim$victim_race %in% c("American Indian/Alaska Native", 
                                                         "Asian/Native Hawaiian/Other Pacific Islander",
-                                                        "Hispanic",
                                                         "Multiple"), ]), 
      xlab = "Days in Jail*", ylab = NULL,
-     #legend.labs = c("American Indian/Alaska Native", "Asian/Native Hawaiian/Other Pacific Islander", 
-     #                "Multiracial"),
+     legend.labs = c("American Indian/Alaska Native", "Asian/Native Hawaiian/Other Pacific Islander", 
+                     "Multiracial"),
      caption = "*Survival curves plotted separately for most/least common racial groups in data and 
      and truncated to jail times 3 years and under for readability",
      legend.title = "",
@@ -368,7 +368,6 @@ psurv3 <- ggsurvplot(survfit(Surv(jail_time, censored) ~ victim_race_white,
      ggtheme = theme_minimal(),
      palette = cols)
 
-# https://stackoverflow.com/questions/59951004/arrange-ggsurv-plots-with-one-shared-legend
 ((psurv1$plot | psurv2$plot) / psurv3$plot) +
   plot_layout()
 
@@ -389,6 +388,35 @@ Our methodology for our secondary analysis of victim characteristics is identica
 
 ***3.1 Preliminary Analysis***
 
+```{r multinomial-model, include=F}
+m1 <- multinom(jail_time_served ~ controlling_offense + arrested_during_status 
+                  + firearm_at_offense + alc_at_offense + drug_at_offense 
+                  + arrest_year_range + held_by + state 
+                  + age_at_arrest + race + sex + citizen + military + education + homeless_12mo_prior,
+               data = prison_filt)
+```
+
+```{r multinomial-results}
+tidy_multinom <- tidy(m1, exponentiate = FALSE)
+
+tidy_multinom$p.value <- pvalue(tidy_multinom$p.value,
+                              accuracy = 0.001, 
+                              decimal.mark = ".",
+                              add_p = FALSE)
+
+tidy_multinom_sig <- tidy_multinom %>%
+  filter((str_detect(term, "age_at_arrest") | str_detect(term, "race") | str_detect(term, "sex")
+         | str_detect(term, "citizen") | str_detect(term, "military") 
+         | str_detect(term, "education") | str_detect(term, "homeless_12mo_prior")) &
+         p.value <= 0.05)
+
+kable_styling(kable(tidy_multinom_sig, digits = c(3,3,3,3), 
+                    caption = "Multinomial Logistic Model Output",
+                    col.names = c("Y Level", "Model Term", "Estimate", 
+                                  "Standard Error", "Test Statistic", "p-Value")),
+              latex_options = "HOLD_position")
+```
+
 ***3.2 Primary Analysis***
 
 ```{r}
@@ -399,12 +427,18 @@ aft_ln3 <- survreg(Surv(jail_time, censored) ~ controlling_offense + arrested_du
                   data = survdata, 
                   dist = "lognormal")
 
-tidy_aft <- tidy(aft_ln3)
-tidy_aft$p.value <- pvalue(tidy_aft$p.value,
+tidy_aft1 <- tidy(aft_ln3)
+tidy_aft1$p.value <- pvalue(tidy_aft1$p.value,
                               accuracy = 0.001, 
                               decimal.mark = ".",
                               add_p = FALSE)
-kable_styling(kable(tidy_aft, digits = c(3,3,3,3), 
+tidy_aft1_sig <- tidy_aft1 %>%
+  filter((str_detect(term, "age_at_arrest") | str_detect(term, "race") | str_detect(term, "sex")
+         | str_detect(term, "citizen") | str_detect(term, "military") 
+         | str_detect(term, "education") | str_detect(term, "homeless_12mo_prior")) &
+           p.value <= 0.05)
+
+kable_styling(kable(tidy_aft1_sig, digits = c(3,3,3,3), 
                     caption = "AFT (log-normal) Model Output (with race white/non-white)",
                     col.names = c("Model Term", "Estimate", "Standard Error", "Test Statistic", "p-Value")),
               latex_options = "HOLD_position")
@@ -413,7 +447,7 @@ kable_styling(kable(tidy_aft, digits = c(3,3,3,3),
 ***3.3 Secondary Analysis***
 
 ```{r}
-aft_ln3 <- survreg(Surv(jail_time, censored) ~ controlling_offense + arrested_during_status 
+aft_ln3_v <- survreg(Surv(jail_time, censored) ~ controlling_offense + arrested_during_status 
                   + firearm_at_offense + alc_at_offense + drug_at_offense 
                   + arrest_year_range + held_by + state 
                   + age_at_arrest + race_white + sex + citizen + military + education + homeless_12mo_prior
@@ -421,12 +455,20 @@ aft_ln3 <- survreg(Surv(jail_time, censored) ~ controlling_offense + arrested_du
                   data = survdata_victim, 
                   dist = "lognormal")
 
-tidy_aft <- tidy(aft_ln3)
-tidy_aft$p.value <- pvalue(tidy_aft$p.value,
+tidy_aft2 <- tidy(aft_ln3_v)
+tidy_aft2$p.value <- pvalue(tidy_aft2$p.value,
                               accuracy = 0.001, 
                               decimal.mark = ".",
                               add_p = FALSE)
-kable_styling(kable(tidy_aft, digits = c(3,3,3,3), 
+
+tidy_aft2_sig <- tidy_aft2 %>%
+  filter((str_detect(term, "age_at_arrest") | str_detect(term, "race") | str_detect(term, "sex")
+         | str_detect(term, "citizen") | str_detect(term, "military") 
+         | str_detect(term, "education") | str_detect(term, "homeless_12mo_prior")
+         | str_detect(term, "victim")) &
+           p.value <= 0.05)
+
+kable_styling(kable(tidy_aft2_sig, digits = c(3,3,3,3), 
                     caption = "AFT (log-normal) Model Output (with race white/non-white)",
                     col.names = c("Model Term", "Estimate", "Standard Error", "Test Statistic", "p-Value")),
               latex_options = "HOLD_position")
