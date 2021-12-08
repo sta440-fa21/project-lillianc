@@ -25,9 +25,11 @@ prison <- read_csv("data/prison-clean.csv")
 cols <- brewer.pal(8, "Accent")
 ```
 
-### Introduction
+## 1. Introduction
 
-In 2019, 23.3% of incarcerated people in the United States were legally innocent -- they had not been tried on their charges in a court of law.^[World Prison Brief https://www.prisonstudies.org/country/united-states-america]. The Prison Policy Initiative found that the number of people in jail pre-trial has nearly quadrupled since the 1980s.^[https://www.prisonpolicy.org/research/pretrial_detention/] Pretrial detention is severely destabilizing for incarcerated individuals and their families. Even a few days in jail can cause people to lose their jobs, their homes, or custody of their children. Studies have shown that people who are detained pretrial are more likely to be convicted and more likely to receive harsher sentences than those who go free.^[need citation] Pretrial detention is also associated with significantly higher recidivism rates.^[Citation]
+***1.1 Context***
+
+In 2019, 23.3% of incarcerated people in the United States were legally innocent -- they had not been tried on their charges in a court of law.^[World Prison Brief https://www.prisonstudies.org/country/united-states-america]. The Prison Policy Initiative found that the number of people in jail pretrial has nearly quadrupled since the 1980s.^[https://www.prisonpolicy.org/research/pretrial_detention/] Pretrial detention is severely destabilizing for incarcerated individuals and their families. Even a few days in jail can cause people to lose their jobs, their homes, or custody of their children. Studies have shown that people who are detained pretrial are more likely to be convicted and more likely to receive harsher sentences than those who go free.^[need citation] Pretrial detention is also associated with significantly higher recidivism rates.^[Citation]
   
 Widespread use of money bail has led to the criminalization of poverty, where individuals who can afford to pay a bail bondsman's fee or to tie up thousands of their own dollars in the court system for months or years can go free, and individuals without those funds sit in jail. This can force innocent individuals who can't pay to claim guilt and accept a plea deal simply to get out of jail faster. In the U.S., there are also clear racial disparities among pretrial detainees. Young Black men are roughly 50% more likely to be detained than white individuals.^[Prison Policy Initiative]. Some people are held in limbo by the criminal legal system for amounts of time comparable to what they would serve if they were convicted. In 2017, The New York Times profiled Kharon Davis, a man who spent at least ten years in county jail awaiting trial. They wrote, "Though he has not been found guilty, Mr. Davis has already served half of the minimum sentence for murder."^[https://www.nytimes.com/2017/09/19/us/alabama-kharon-davis-speedy.html]
 
@@ -35,7 +37,7 @@ Not everyone held in jail is awaiting trial -- there are also individuals with r
 
 The ICPSR 2016 Survey of Prison Inmates contains data from 364 prisons across the United States. 24,848 incarcerated individuals participated, 81% of which were held in state prisons and the other 19% in federal prisons. Part of the survey asked respondents how long they had been detained in jail.
 
-- Error involved in any kind of survey data: jail time is self-reported and not verified from a second source. Also, the survey question doesn't ask participants to specify whether this jail time was pre-detention. Using jail time as length of pre-trial detention is not a perfect proxy, but we have reason to believe it is a good one (at least given the way the system is supposed to work), since those serving their sentences for minor convictions in jails should not have been surveyed and split jail-prison sentences are not the norm -- generally, individuals in prison, if they were detained pretrial, did so in jails, and were transferred to prisons after their convictions. 
+- Error involved in any kind of survey data: jail time is self-reported and not verified from a second source. Also, the survey question doesn't ask participants to specify whether this jail time was pre-detention. Using jail time as length of pretrial detention is not a perfect proxy, but we have reason to believe it is a good one (at least given the way the system is supposed to work), since those serving their sentences for minor convictions in jails should not have been surveyed and split jail-prison sentences are not the norm -- generally, individuals in prison, if they were detained pretrial, did so in jails, and were transferred to prisons after their convictions. 
 - 391 individuals, or 1.6% of all observations in the data, reported that they had not yet been sentenced. These pretrial wait times are right-censored, but the group is very small compared to the overall survey participants.
 - This data is restricted to individuals in prison, so will exclude those with dismissed or not guilty charges who were also held pretrial. However, it still provides an important window into the punishment people face in America before they are even tried (the wait for justice).
 
@@ -43,11 +45,11 @@ Research questions:
 
 1) When controlling for aspects of the main offense they are prosecuted for and other policy-related covariates, do individuals incarcerated in United States prisons in different racial and ethnic groups wait longer before sentencing?
 
-2) Does time detained pre-trial have any relationship with characteristics, such as sex, race, age, and whether they were known by the detained individual, of the victims of "violent" crimes?
+2) Does time detained pretrial have any relationship with characteristics, such as sex, race, age, and whether they were known by the detained individual, of the victims of "violent" crimes?
 
-- Extended pretrial limbo impacts both the detained accused and victims waiting for resolution. Looking at victim characteristics is essential because of the way racial bias and violence have historically been and continue to be codified in the criminal legal system, where white victims are more likely to get attention and justice than Black and brown victims. We see this in the disproportionate national media fervor over cases of white women who go missing or face violence while missing Black and Indigenous women are often ignored or overlooked. Class can play into this as well, with lower-class white victims experiencing different levels of treatment and attention than their upper-class counterparts. Unfortunately the ICPSR survey does not include information on victim income, so I lack the data necessary to add this consideration to analysis. Regardless, the disparities in treatment based on racial dynamics are complicated. It's difficult to outline an ideal outcome because we can imagine scenarios in which less time spent pre-trial with this dynamic might be worse for the defendant. Like in the case of Walter McMillian^[Bryan Stevenson, Just Mercy], innocent Black men have frequently been accused of violence against white women and swept through a speedy and unfair trial on a wave of white supremacist fervor. Hasty prosecution and extensive pretrial detention are two very important ways justice is denied, but they manifest as opposite effects in our data. This analysis is limited in its ability to address all that complexity, keeping in mind the meanings of such varied outcomes for both victims and defendants alike. However, it will attempt to shed some light on whether there are differences based on victim characteristics and what the magnitudes of those differences are.
+- Extended pretrial limbo impacts both the detained accused and victims waiting for resolution. Looking at victim characteristics is essential because of the way racial bias and violence have historically been and continue to be codified in the criminal legal system, where white victims are more likely to get attention and justice than Black and brown victims. We see this in the disproportionate national media fervor over cases of white women who go missing or face violence while missing Black and Indigenous women are often ignored or overlooked. Class can play into this as well, with lower-class white victims experiencing different levels of treatment and attention than their upper-class counterparts. Unfortunately the ICPSR survey does not include information on victim income, so I lack the data necessary to add this consideration to analysis. Regardless, the disparities in treatment based on racial dynamics are complicated. It's difficult to outline an ideal outcome because we can imagine scenarios in which less time spent pretrial with this dynamic might be worse for the defendant. Like in the case of Walter McMillian^[Bryan Stevenson, Just Mercy], innocent Black men have frequently been accused of violence against white women and swept through a speedy and unfair trial on a wave of white supremacist fervor. Hasty prosecution and extensive pretrial detention are two very important ways justice is denied, but they manifest as opposite effects in our data. This analysis is limited in its ability to address all that complexity, keeping in mind the meanings of such varied outcomes for both victims and defendants alike. However, it will attempt to shed some light on whether there are differences based on victim characteristics and what the magnitudes of those differences are.
 
-#### Data Description
+***1.2 Data Description***
 
 **Figure 2: Distribution of Jail Time**
 
@@ -111,7 +113,9 @@ jailtime_histogram <- prison_nr %>%
 
 In the data, 90.0% of individuals reported serving jail time, 8.3% reported serving no jail time, and 1.7% skipped the related survey questions (jail time served and amount of jail time) (CHECK THIS). 457 individuals have missing data for jail time, and INSERT JUSTIFICATION these individuals will be excluded from the primary and secondary analyses (after the jail time served logistic model).
 
-The maximum jail time reported in the data was 37 years, though the majority of individuals served 3 years or less. In 2017, The New York Times wrote that Kharon Davis's 10-year wait pre-trial was "among the most protracted" they could find.^[citation] Thus, this will serve as a best estimate for expected maximum jail time, and we will filter the data before analysis to remove observations with jail time greater than or equal to 11 years. This removes 285 observations or 1.2% of the dataset. Also, three individuals who did not report their military status and ten individuals who did not report their sentencing status were excluded from analysis.
+The maximum jail time reported in the data was 37 years, though the majority of individuals served 3 years or less. In 2017, The New York Times wrote that Kharon Davis's 10-year wait pretrial was "among the most protracted" they could find.^[citation] Thus, this will serve as a best estimate for expected maximum jail time, and we will filter the data before analysis to remove observations with jail time greater than or equal to 11 years. This removes 285 observations or 1.2% of the dataset. Also, three individuals who did not report their military status and ten individuals who did not report their sentencing status were excluded from analysis. 
+
+ELABORATE ON MISSINGNESS DISCUSSION (from C3 From visualizations of missingness in Appendix section A, we found income seems to have the highest percentage of missingness (14%), followed by years in Durham (3.5%). Based on background knowledge, we assumed the data is **missing at random (MAR)**. We believe the observed missingness can be largely explained by other explanatory variables which we have data for rather than unobserved or unmeasured variables. )
 
 ```{r filter-military-and-sentenced}
 prison_filt <- prison %>%
@@ -128,7 +132,7 @@ prison_violent_nr <- prison_nr %>%
   filter(controlling_offense_type == "Violent")
 ```
 
-We are interested in controlling for a number of covariates when examining discrepancies in pre-trial detention. These can be split into three groups: **policy-related** covariates (arrest year, authority detained by, and state of detention facility), **charge-related** covariates (main offense and main offense type, legal status at arrest, posession of firearm at arrest, under the influence of alcohol at arrest, and under the influence of drugs at arrest), and **demographic-related** covariates (age at arrest, race, sex, citizenship, veteran status, education level, and whether homeless in 12 months prior to offense). Policy-related covariates matter because of changes in pre-trial detention policy over time (such as during the "tough on crime" era in the 1980s and early 1990s) and across states and jurisdictions. The charge-related covariates represent all the offense-related information available in the ICPSR data, information which would have been available to the district attorneys and judges overseeing these cases and making decisions about bond and detention. And demographic-related covariates allow us to look for discrepancies in treatment between groups of people.
+We are interested in controlling for a number of covariates when examining discrepancies in pretrial detention. These can be split into three groups: **policy-related** covariates (arrest year, authority detained by, and state of detention facility), **charge-related** covariates (main offense and main offense type, legal status at arrest, posession of firearm at arrest, under the influence of alcohol at arrest, and under the influence of drugs at arrest), and **demographic-related** covariates (age at arrest, race, sex, citizenship, veteran status, education level, and whether homeless in 12 months prior to offense). Policy-related covariates matter because of changes in pretrial detention policy over time (such as during the "tough on crime" era in the 1980s and early 1990s) and across states and jurisdictions. The charge-related covariates represent all the offense-related information available in the ICPSR data, information which would have been available to the district attorneys and judges overseeing these cases and making decisions about bond and detention. And demographic-related covariates allow us to look for discrepancies in treatment between groups of people.
 
 **Figure 3: Distribution of Jail Time by Race of Incarcerated Individual**
 
@@ -199,31 +203,39 @@ p4 <- plot_box("victim_hispanic", prison_violent_nr) +
   plot_layout(guides = "collect") & theme(legend.position = "bottom")
 ```
 
-Data for our secondary analysis contains only individuals serving time for a primary offense labeled 'violent.' Victim information for those convicted of drug and property crimes, offenses which are often victimless or which lack easily identifiable victims, is largely missing. However, 64% of those with a violent primary offense did report victim race. Missingness patterns in victim sex and Hispanic ethnicity were similar. In Figure 4, we observe that individuals convicted of crimes against male victims appear to have a longer mean detention period pre-trial. Black and Indigenous victims see the highest mean pre-trial detention; white and multi-racial victims the lowest. Hispanic victims also appear to see higher mean jail time than non-Hispanic victims.
+Data for our secondary analysis contains only individuals serving time for a primary offense labeled 'violent.' Victim information for those convicted of drug and property crimes, offenses which are often victimless or which lack easily identifiable victims, is largely missing. However, 64% of those with a violent primary offense did report victim race. Missingness patterns in victim sex and Hispanic ethnicity were similar. In Figure 4, we observe that individuals convicted of crimes against male victims appear to have a longer mean detention period pretrial. Black and Indigenous victims see the highest mean pretrial detention; white and multiracial victims the lowest. Hispanic victims also appear to see higher mean jail time than non-Hispanic victims.
 
-#### Preliminary Analysis: Any Jail Time Served
+***1.3 Hypothesis***
+
+Due to the research cited above and preliminary data visualization, we hypothesize that Black, Indigenous and Latinx incarcerated people serve longer jail times. Also, despite the punishing and justice-denying effects of extended pretrial incarceration for those facing charges, due to the imbalance of community attention and outrage surrounding (especially female) white victims versus victims of color, we hypothesize that violent crimes committed against white victims will be associated with shorter detention times pretrial compared to Black and Indigenous victims.
+
+## 2. Methodology
+
+***2.1 Preliminary Analysis: Any Jail Time Served***
 
 ```{r binary-jailtimeserved-model}
 
 ```
 
+***2.2 Primary Analysis: Racial Discrepancies in Jail Time***
 
-##### Question 1
+***2.3 Secondary Analysis: Jail Time by Victim Characteristics***
 
-##### Question 2
+## 3. Results
 
-```{r}
+***3.1 Preliminary Analysis***
 
-```
-- Dataset for secondary analysis filtered for controlling offense type of violent, since this is the category which most frequently has victim information.
-- Missingness in victim information recoded as 'Not known/not reported': preliminary box plots examining differences in predictors between victim information reported and not known and a multinomial logistic model with victim_race as response and all policy/charge detail/individual characteristic confounders as predictors to look for patterns in missingness
-- Boxplots of different victim characteristics and jail time served
+***3.2 Primary Analysis***
 
-#### Hypothesis
+***3.3 Secondary Analysis***
 
-Due to the research cited above and preliminary data visualization, I hypothesize that Black, Indigenous and Latinx incarcerated people serve longer jail times. Also, despite the punishing and justice-denying effects of extended pretrial incarceration for those facing charges, due to the imbalance of community attention and outrage surrounding white women victims versus women of color, I hypothesize that violent crimes committed against white victims will be associated with shorter detention times pretrial compared to non-white victims.
+## 4. Discussion
 
-### Methodology
+***4.1 Conclusions***
+
+***4.2 Limitations and Future Directions***
+
+***4.3 Summary***
 
 While survival analysis would allow for incorporation of individuals who have not yet been sentenced into the analysis, those individuals account for less than 2% of the data overall. A much greater proportion of individuals in the data (8.3%) were recorded as spending 0 days in jail. These individuals are important to consider. They likely represent a group that could afford to post bail or pay a bail bondsman, or in states with different pretrial detention policies that don't rely on money bail. In recent years, places like New Jersey and Washington D.C. have made this shift. California has also attempted to make some reforms. So in order to be able to incorporate these individuals, I will conduct multiple linear regression.
 
