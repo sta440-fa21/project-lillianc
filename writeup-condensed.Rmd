@@ -1,0 +1,870 @@
+---
+title: 'Waiting for Trial: A Case Study of Detention Times Prior to Sentencing'
+date: "12/7/2021"
+output: pdf_document
+geometry: "left=1in,right=1in,top=1in,bottom=1in"
+header-includes:
+    - \usepackage{caption}
+---
+
+\captionsetup[table]{labelformat=empty}
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(magrittr)
+library(survival)
+library(survminer)
+library(rstanarm)
+library(scales)
+library(RColorBrewer)
+library(patchwork)
+library(broom)
+library(kableExtra)
+library(nnet)
+```
+
+```{r load-data, message=FALSE}
+prison <- read_csv("data/prison-clean.csv")
+```
+
+```{r set-colors}
+cols <- brewer.pal(8, "Accent")
+```
+
+\newpage
+
+## Waiting for Trial: A Case Study of Detention Times Prior to Sentencing
+
+### Abstract
+
+In the United States, hundreds of thousands of people are currently detained pretrial. Pretrial detention is destabilizing and associated with higher odds of conviction and harsher sentences.The Bureau of Justice Statistics' 2016 Survey of Prison Inmates asked incarcerated people how long they were held in jails before transfer to prison (which typically occurs after sentencing). We conduct survival analysis of this data to determine whether a person's race is associated with the length of time they were detained in jail. Also, motivated by a history of inequal legal treatment of crimes against white women versus women of color, for people accused of violent crimes, we examine whether the victim's race is associated with jail time. We find that, holding factors such as the nature of the primary offense, other demographic descriptions, and prosecution policy-related variables constant, we expect white individuals to spend fewer days in jail than individuals of color.
+
+\newpage
+
+## 1. Introduction
+
+***1.1 Context***
+
+In 2019, 23.3% of incarcerated people in the United States were legally innocent -- they had not been tried on their charges in a court of law [1]. The Prison Policy Initiative found that the number of people in jail pretrial has nearly quadrupled since the 1980s [2]. Pretrial detention is severely destabilizing for incarcerated individuals and their families. Even a few days in jail can cause people to lose their jobs, their homes, or custody of their children. Studies have shown that people who are detained pretrial are more likely to be convicted and more likely to receive harsher sentences than those who go free [3]. Pretrial detention is also associated with significantly higher recidivism rates [4].
+
+Widespread use of money bail has led to the criminalization of poverty, where individuals who can afford to pay a bail bondsman's fee or to tie up thousands of their own dollars in the court system for months or years can go free, and individuals without those funds sit in jail. This can force innocent individuals who can't pay to claim guilt and accept a plea deal simply to get out of jail faster. In the U.S., there are also clear racial disparities among pretrial detainees. Young Black men are roughly 50% more likely to be detained than white individuals [5]. Some people are held in limbo by the criminal legal system for amounts of time comparable to what they would serve if they were convicted. In 2017, The New York Times profiled Kharon Davis, a man who spent at least ten years in county jail awaiting trial. They wrote, "Though he has not been found guilty, Mr. Davis has already served half of the minimum sentence for murder" [6].
+
+Not everyone held in jail is awaiting trial -- there are also individuals with relatively minor convictions, such as parole violations or misdemeanors, who serve their full sentences there, usually for less than a year. The proportion of pretrial detainees in jail populations has increased from 53% in 1970 to 64% in 2015 [4]. Some data on pretrial detention is available for web scraping from local jails but there are significant problems with transparency, inaccuracies and data entry issues in this data [7]. Availability also varies widely by local jurisdiction. These problems make it difficult to determine which jail inhabitants have been convicted and which have not. It also makes studying pretrial detention and inequities harder.
+
+The Bureau of Justice Statistics (BJS) 2016 Survey of Prison Inmates contains data from 364 prisons across the United States. BJS surveyed prisoners 18 and older, and 24,848 incarcerated individuals participated, 81% of which were held in state prisons and the other 19% in federal prisons [8]. This data is available from ICPSR, the Inter-university Consortium for Political and Social Research, at the University of Michigan. Part of the survey asked respondents how long they had been detained in jail. Jail time is not a perfect proxy for length of pretrial detention, but we have reason to believe it is a good one. Given the way the legal system is supposed to work, those serving sentences for minor convictions in jails should not have been included -- only prison inmates were surveyed -- and split jail-prison sentences are not typical. Generally, individuals in prison, if they were detained pretrial, did so in jails, and were transferred to prisons after sentencing. As with any survey, this one is subject to error: jail time is self-reported and not verified from a second source. This data is restricted to individuals in prison, so will exclude those with dismissed or not guilty charges who were also held pretrial. Despite these limitations, national data on pretrial incarceration of this scale is hard to come by. Analysis of the BJS survey provides an important window into the punishment people face in America before they are even tried: the wait for justice.
+
+In this study, we will aim to answer **1) When controlling for aspects of the main offense they are prosecuted for and other policy-related covariates, do individuals incarcerated in United States prisons in different racial and ethnic groups wait longer before sentencing?** and **2) Does time detained pretrial have any relationship with characteristics, such as sex, race, age, and whether they were known by the detained individual, of the victims of violent crimes?**
+
+Extended pretrial detention keeps both the detained accused and victim in limbo, waiting for resolution. Examining victim characteristics is essential because of the way racial bias and violence have historically been and continue to be codified in the criminal legal system, where white victims are more likely to get attention and justice than Black and brown victims. We see this in the disproportionate national media fervor over cases of white women who go missing or face violence while the cases of missing Black and Indigenous women are often ignored. Class can play into this as well, with lower-class white victims experiencing different levels of treatment and attention than upper-class white victims. Unfortunately, the BJS survey does not include information on victim income, so we lack the data necessary to add this consideration to analysis. Regardless, the disparities in treatment based on racial dynamics are complicated. It's difficult to outline an ideal outcome. We can imagine scenarios in which less time spent pretrial might be worse for the defendant. As Bryan stevenson documented in the case of Walter McMillian, innocent Black men have historically been accused of violence against white women and swept through speedy and unfair trials on waves of white supremacist fervor [9]. Hasty prosecution and extensive pretrial detention are two very important ways justice is denied, but they manifest as opposite effects in our data. This analysis is limited in its ability to address all that complexity, keeping in mind the meanings of such varied outcomes for both victims and defendants alike. However, we will attempt to shed some light on whether there are differences based on the characteristics of the detained accused and of the victim and what the magnitudes of those differences are.
+
+***1.2 Data Description***
+
+**Figure 1: Distribution of Jail Time**
+
+```{r relabel-categories}
+prison_nr <- prison %>%
+  mutate_if(is.character, ~case_when(
+    .x == "Not Reported" ~ "NR", 
+    .x == "American Indian/Alaska Native" ~ "American Indian/\nAlaska Native",
+    .x == "Asian/Native Hawaiian/Other Pacific Islander" ~ "Asian/Native Hawaiian/\nOther Pacific Islander",
+    TRUE ~ .x)) %>%
+  mutate(across(c("race", "victim_race", "victim_sex", "victim_hispanic"), 
+                ~ifelse(.x == "NR", "Not Reported", .x)))
+```
+
+```{r jailtime-eda, fig.height=4}
+jailtimeserved_barplot <- prison_nr %>%
+  ggplot(aes(x = fct_relevel(jail_time_served, "NR", "No", "Yes"), fill = jail_time_served)) +
+  geom_bar(show.legend = FALSE) +
+  scale_y_continuous(labels = label_number(accuracy = 1, scale = 1 / 1000, suffix = "K")) +
+  scale_fill_manual(values = cols[1:3]) +
+  labs(title = "Jail Time Served",
+       y = "Individuals",
+       x = NULL,
+       caption = "NR = Not Reported") +
+  theme_minimal() +
+  theme(panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        axis.title.x = element_blank())
+
+jailtime_boxplot <- prison_nr %>%
+  filter(!is.na(jail_time), jail_time_served == "Yes") %>%
+  ggplot(aes(x = jail_time)) +
+  geom_boxplot(width = 0.2, alpha = 0.5) +
+  scale_x_continuous(breaks = seq(0, 13505, 365 * 5), labels = label_number(accuracy = 1, scale = 1 / 365)) +
+  scale_y_continuous(limits = c(-0.1, 0.1)) +
+  labs(title = "Jail Time Among Those Who Served", 
+       x = "Time Spent in Jail (years)", 
+       y = NULL) +
+  theme_minimal() +
+  theme(axis.text.y = element_blank(),
+        panel.grid = element_blank())
+
+jailtime_histogram <- prison_nr %>%
+  filter(!is.na(jail_time), jail_time < 10 * 365, jail_time_served == "Yes") %>%
+  ggplot(aes(x = jail_time)) +
+  geom_histogram(fill = cols[[3]], color = "black", binwidth = 150) +
+  scale_x_continuous(breaks = seq(0, 10 * 365, 365 * 2), labels = label_number(accuracy = 1, scale = 1 / 365)) +
+  scale_y_continuous(labels = label_number(accuracy = 1, scale = 1 / 1000, suffix = "K")) +
+  coord_cartesian(xlim = c(0, 10 * 365)) +
+  labs(title = "Jail Time Served, 10 Years or Less", 
+       x = "Time Spent in Jail (years)", 
+       y = "Individuals") +
+  theme_minimal() +
+  theme(panel.grid.major.x = element_blank(),
+        panel.grid.major.y = element_blank())
+
+jailtime_histogram_censored <- prison_nr %>%
+  filter(!is.na(jail_time), jail_time < 10 * 365, jail_time_served == "Yes", sentenced == "No") %>%
+  ggplot(aes(x = jail_time)) +
+  geom_histogram(fill = cols[[3]], color = "black", binwidth = 150) +
+  scale_x_continuous(breaks = seq(0, 10 * 365, 365 * 2), labels = label_number(accuracy = 1, scale = 1 / 365)) +
+  scale_y_continuous(breaks = seq(0, 40, 20)) +
+  coord_cartesian(xlim = c(0, 10 * 365)) +
+  labs(title = "Jail Time for Unsentenced Individuals, (10yr or less, censored)", 
+       x = "Time Spent in Jail (years)", 
+       y = "Individuals") +
+  theme_minimal() +
+  theme(panel.grid.major.x = element_blank(),
+        panel.grid.major.y = element_blank())
+
+(jailtimeserved_barplot | 
+    ((jailtime_boxplot / jailtime_histogram / jailtime_histogram_censored) + plot_layout(heights = c(1, 5, 1)))) +
+  plot_layout(guides = "collect",
+              widths = c(1, 3))
+```
+
+In the data, 90.0% of individuals reported serving jail time, 8.3% reported serving no jail time, and 1.7% did not respond to the related survey question. 457 individuals have missing data for length of jail time, and while we will consider those with missing values in a preliminary analysis, they will be excluded from our primary and secondary survival analyses. The maximum jail time reported in the data was 37 years, though the majority of individuals served 3 years or less. In 2017, The New York Times wrote that Kharon Davis's 10-year wait pretrial was "among the most protracted" they could find [6]. Thus, this years will serve as our best estimate for expected maximum jail time, and we will filter the data before analysis to remove observations with jail time greater than ten years. After exclusion of missing jail times, this removes 116 observations or 0.5% of the dataset. Also, three individuals who did not report their military status and ten individuals who did not report their sentencing status were excluded from analysis. We believe that a failure to report certain values may be meaningful, so for all variables other than length of jail time, missingness is encoded as the factor level "Not Reported" to preserve this information through analysis.
+
+Additionally, incarcerated individuals were asked whether they had been sentenced, and a small number (133 individuals, or 0.55% of the data after the above filtering) reported that they had not yet been sentenced. Thus, their pretrial detention times are right-censored. The majority of these unsentenced individuals were arrested in more years closer to the survey dates, between 2013 and 2016.
+
+```{r filter-missingness}
+prison_filt <- prison %>%
+  filter(military != "Not Reported", sentenced != "Not Reported", (jail_time <= 10 * 365 | is.na(jail_time)))
+
+prison_nr %<>%
+  filter(military != "NR", sentenced != "NR", (jail_time <= 10 * 365 | is.na(jail_time)))
+
+# data for second analysis
+prison_violent <- prison_filt %>%
+  filter(controlling_offense_type == "Violent")
+
+prison_violent_nr <- prison_nr %>%
+  filter(controlling_offense_type == "Violent")
+```
+
+We are interested in controlling for a number of covariates when examining discrepancies in pretrial detention. These can be split into three groups: **policy-related** covariates (arrest year, authority detained by, and state of detention facility), **charge-related** covariates (primary offense and primary offense type, legal status at arrest, posession of firearm at offense, under the influence of alcohol at offense, and under the influence of drugs at offense), and **demographic-related** covariates (age at arrest, race, sex, citizenship, veteran status, education level, and whether homeless in 12 months prior to offense). Policy-related covariates matter because of changes in pretrial detention policy over time (such as during the "tough on crime" era in the 1980s and early 1990s) and across states and jurisdictions. The charge-related covariates represent all the offense-related information available in the BJS data, information which would have been available to the district attorneys and judges overseeing these cases and making decisions about bond and detention. And demographic-related covariates allow us to look for discrepancies in treatment between groups of people.
+
+**Figure 2: Distribution of Jail Time by Race of Incarcerated Individual**
+
+```{r indiv-race-eda, fig.height=2}
+plot_box <- function(varname_c, dataset){
+  p <- dataset %>%
+    mutate(victim_race = fct_infreq(victim_race)) %>%
+    filter(!is.na(jail_time)) %>%
+    ggplot(aes(x = jail_time, y = fct_reorder(get(varname_c), jail_time, .fun = mean, .desc = TRUE))) +
+    geom_boxplot() +
+    coord_cartesian(xlim = c(0, 3 * 365)) +
+    scale_x_continuous(breaks = seq(0, 4 * 365, 365), 
+                       labels = label_number(accuracy = 1, scale = 1 / 365)) +
+    labs(x = NULL) +
+    theme_minimal()
+  
+  return(p)
+}
+
+p1 <- plot_box("race", prison_nr) +
+  labs(y = "Race",
+       x = "Time Spent in Jail (years)",
+       caption = "*x-axis truncated to jail time 3 years and under for readability")
+
+p1
+```
+
+Before controlling for covariates, mean jail time seems lowest for white incarcerated individuals and highest for Black individuals and those who did not report their race. The discrepancies between groups in Figure 2 may not appear large. However, in a world where just days or weeks in jail can make a difference in the resources and support networks available to incarcerated individuals, small discrepancies matter.
+
+**Figure 3: Distribution of Jail Time for "Violent" Offenses by Victim Characteristics**
+
+```{r victim-eda, fig.height=4}
+p5 <- prison_violent_nr %>%
+  mutate(victim_race = fct_infreq(victim_race)) %>%
+  ggplot(aes(y = victim_race, fill = victim_race)) +
+  geom_bar() +
+  labs(x = "Individuals Incarcerated",
+       y = "Race of Victim",
+       fill = NULL) +
+  scale_x_continuous(labels = label_number(accuracy = 1, scale = 1 / 1000, suffix = "K")) +
+  scale_fill_manual(values = cols) +
+  coord_flip() +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+        legend.position = "bottom")
+
+p2 <- plot_box("victim_sex", prison_violent_nr) +
+  labs(y = "Sex") +
+  theme(axis.text.x = element_blank(),
+        plot.title.position = "plot")
+
+p3 <- plot_box("victim_race", prison_violent_nr) +
+  labs(y = "Race") +
+  theme(axis.text.x = element_blank(),
+        plot.title.position = "plot") +
+  geom_boxplot(aes(fill = victim_race), show.legend = FALSE) +
+  scale_fill_manual(values = cols)
+
+p4 <- plot_box("victim_hispanic", prison_violent_nr) +
+  labs(y = "Hispanic",
+       x = "Time Spent in Jail (years)",
+       caption = "*x-axis truncated to jail time 3 years and under for readability") +
+  theme(plot.title.position = "plot")
+
+(p5 | ((p2 / p3/ p4) +
+  plot_layout(heights = c(1, 2, 1),
+              guides = "collect"))) +
+  plot_layout(guides = "collect") & theme(legend.position = "bottom")
+```
+
+Data for our secondary analysis contains only individuals serving time for a primary offense labeled 'violent.' Victim information for those convicted of drug and property crimes, offenses which are often victimless or which lack easily identifiable victims, is largely missing. However, 64% of those with a violent primary offense did report victim race. The proportion of missingness by offense type in victim sex and Hispanic ethnicity were similar. In Figure 3, we observe that individuals convicted of crimes against male victims appear to have a longer mean detention period pretrial. Black and Indigenous victims see the highest mean pretrial detention for the accused; white and multiracial victims the lowest. Hispanic victims also appear to see higher mean jail time than non-Hispanic victims.
+
+***1.3 Hypothesis***
+
+Due to the research cited above and preliminary data visualization, we hypothesize that Black, Indigenous and Latinx incarcerated people serve longer jail times. Also, despite the punishing and justice-denying effects of extended pretrial incarceration for those facing charges, due to the imbalance of community attention and outrage surrounding (especially female) white victims versus victims of color, we hypothesize that violent crimes committed against white victims will be associated with shorter detention times pretrial compared to Black and Indigenous victims.
+
+## 2. Methodology
+
+***2.1 Preliminary Analysis: Any Jail Time Served***
+
+Our first goal is to understand whether jail time served is associated with the race of the incarcerated individual. While survival analysis will allow for incorporation of individuals who have not yet been sentenced into our model, roughly 8% of the data consists of people who reported serving no jail time and would have survival time 0. These individuals are important to consider. They likely represent a group that could afford to post bail or pay a bail bondsman, or that live in states with pretrial detention policies that don't heavily rely on money bail, places like New Jersey and Washington D.C. [10]. To consider those who were not detained pretrial before removing them from the data for survival analysis, we will first conduct multinomial logistic regression with the jail time served indicator as our response and policy, charge, and demographic covariates as predictors.
+
+We opt for multinomial logistic regression over binary logistic regression with only jail time served/not served as outcome in order to account for potential meaning in missingness in the data. Instead of filtering out those with jail time not reported, we consider "Not Reported" as a third outcome in our model. See Appendix 1 for model assumptions and diagnostics.
+
+***2.2 Primary Analysis: Racial Discrepancies in Jail Time***
+
+Our next goal is to observe whether an individual's race is associated with jail time, and if an association does exist, to understand the effect size of race on days in jail.
+
+**Figure 4: Survival Curve for Race of Incarcerated Individual**
+
+```{r prepare-survdata}
+survdata <- prison_filt %>%
+  filter(!is.na(jail_time), jail_time > 0)
+
+survdata_victim <- survdata %>%
+  filter(controlling_offense_type == "Violent")
+```
+
+```{r survival-curve, fig.height=3}
+psurv1 <- ggsurvplot(survfit(Surv(jail_time, censored) ~ race, 
+                   data = survdata[survdata$race %in% c("White", "Black", "Hispanic", "Other"), ]), 
+     xlab = "Days in Jail*", ylab = "Estimated Survival Probability",
+     legend.labs = c("White", "Black", "Hispanic", "Other"),
+     legend.title = "",
+     legend = c(0.75, 0.85),
+     ylim = c(0, 1),
+     xlim = c(0, 365 * 3),
+     conf.int = T, censor = F,
+     ggtheme = theme_minimal(),
+     palette = cols)
+
+psurv2 <- ggsurvplot(survfit(Surv(jail_time, censored) ~ race, 
+                   data = survdata[survdata$race %in% c("American Indian/Alaska Native", 
+                                                        "Asian/Native Hawaiian/Other Pacific Islander",
+                                                        "Not Reported"), ]), 
+     xlab = "Days in Jail*", ylab = NULL,
+     legend.labs = c("American Indian/\nAlaska Native", "Asian/Native Hawaiian/\nOther Pacific Islander", 
+                     "Not Reported"),
+     caption = "*Survival curves plotted separately for most/least common racial groups in data and 
+     and truncated to jail times 3 years and under for readability",
+     legend.title = "",
+     legend = c(0.75, 0.85),
+     ylim = c(0, 1),
+     xlim = c(0, 365 * 3),
+     conf.int = T, censor = F,
+     ggtheme = theme_minimal(),
+     palette = cols[4:7])
+
+psurv3 <- ggsurvplot(survfit(Surv(jail_time, censored) ~ race_white, 
+                   data = survdata), 
+     xlab = "Days in Jail", ylab = "Estimated Survival Probability",
+     legend.labs = c("Convicted person of color", "Race not reported", "White convicted person"),
+     legend.title = "",
+     legend = c(0.5, 0.5),
+     ylim = c(0, 1),
+     xlim = c(0, 365 * 10),
+     conf.int = T, censor = F,
+     ggtheme = theme_minimal(),
+     palette = cols)
+
+psurv3$plot
+
+logrank_test <- survdiff(Surv(jail_time, censored) ~ race_white, data = survdata)
+logrank_p <- glance(logrank_test)$p.value[[1]]
+tidy_logrank <- tidy(logrank_test) %>%
+  mutate(calc_oe = ((obs - exp) ^ 2) / exp,
+         calc_oez = ((obs - exp) ^ 2 ) / diag(logrank_test$var),
+         race_white = case_when(
+           race_white == "Y" ~ "White",
+           race_white == "N" ~ "Non-white",
+           TRUE ~ race_white))
+```
+
+We plot survival curves for the data from a non-parametric Kaplan-Meier estimate. When racial categories are simplified to white and non-white, as shown in Figure 4, the curves for different groups do not cross. They also remain roughly parallel at most survival times. This provides empirical evidence of proportional hazard and establishes the power of a log-rank test as a method to compare groups. Such a test of survival times for white incarcerated individuals, non-white individuals, and those who did not report their race has significant p-value <0.001. (See Appendix 2 for survival curves for disaggregated racial groups and full log-rank test results.) We will further explore this racial discrepancy with a survival model.
+
+To further examine the scale of this difference and incorporate confounders, we built an accelerated failure time (AFT) model with error term $\epsilon_i$ normally distributed and survival time $T_i$ log-normally distributed, specified as follows: $$ \log(T_i) = \beta_0 + \beta_1x_{1i} + \beta_2x_{2i} + ... + \epsilon_i $$
+
+We included the following covariates: primary offense, legal status at arrest, firearm present at offense, under the influence of alcohol at offense, under the influence of drugs at offense, arrest year range, authority held by, state of incarceration, age at arrest, race, sex, citizenship status, veteran status, education level, and whether homeless in the year prior to offense. We believe the policy and charge-related covariates were important to include to correct for the effects as much as possible of the nature of the crimes people were accused of and how they were prosecuted, which can vary regionally and over time. The demographic-related covariates were selected for inclusion because of interest.
+
+We compared AFT models with Weibull, log-normal, log-logistic, and exponential hazard distributions in Appendix 2 and conducted model selection with Kaplan-Meier residual plots under the survival functions of these distributions. These plots show the log-normal model performs well, that the curve of its distribution fits the residuals most closely and satisfies assumptions (see Appendix 2). As shown in the white/non-white survival curve above, there are several different ways race can be encoded: either as 1) white, Black, hispanic, other, American Indian/Alaska Native, Asian/Native Hawaiian/Other Pacific Islander, or not reported; 2) Black, non-Black, and not reported; and 3) white, non-white, and not reported. After model selection, we conducted variable selection via Akaike Information Criterion (AIC) and Bayesian Information Criterion (BIC) to determine which among these three variables to include as a confounder in our log-normal model. Both metrics select the model which labels individuals as white/non-white.
+
+In lieu of an AFT model, we could have pursued a Cox proportional hazards model. Although a semi-parametric model may have done better to capture the complexity in our data, a proportional hazards model would not do well to estimate the magnitude of the difference in jail time served between groups. Our goal is to ascertain how long individuals spend detained pretrial, not their instantaneous hazard rate of sentencing. Therefore, an AFT model is more appropriate for our analysis. Estimating survival times is possible with a Cox proportional hazards model throuogh Breslow estimator calculations, but AFT model coefficients provide a more straightforward approach. In this approach, we do assume that individuals with censored jail times have the same survival prospects as those without censoring at every point in time and that survival probability functions have remained roughly constant over the period of data collection.
+
+***2.3 Secondary Analysis: Jail Time by Victim Characteristics***
+
+**Figure 5: Survival Curve for Race of Victim**
+
+```{r survival-curve-victim, fig.height=3}
+psurv1_v <- ggsurvplot(survfit(Surv(jail_time, censored) ~ victim_race, 
+                   data = survdata_victim[survdata_victim$victim_race %in% 
+                                            c("White", "Black", "Not Reported"), ]), 
+     xlab = "Days in Jail*", ylab = "Estimated Survival Probability",
+     legend.labs = c("Black", "Not Reported", "White"),
+     legend.title = "",
+     legend = c(0.75, 0.85),
+     ylim = c(0, 1),
+     xlim = c(0, 365 * 3),
+     conf.int = T, censor = F,
+     ggtheme = theme_minimal(),
+     palette = cols)
+
+psurv2_v <- ggsurvplot(survfit(Surv(jail_time, censored) ~ victim_race, 
+                   data = survdata_victim[survdata_victim$victim_race %in% c("American Indian/Alaska Native", 
+                                                        "Asian/Native Hawaiian/Other Pacific Islander",
+                                                        "Multiple"), ]), 
+     xlab = "Days in Jail*", ylab = NULL,
+     legend.labs = c("American Indian/\nAlaska Native", "Asian/Native Hawaiian/\nOther Pacific Islander", 
+                     "Multiracial"),
+     caption = "*Survival curves plotted separately for most/least common racial groups in data and 
+     and truncated to jail times 3 years and under for readability",
+     legend.title = "",
+     legend = c(0.75, 0.85),
+     ylim = c(0, 1),
+     xlim = c(0, 365 * 3),
+     conf.int = T, censor = F,
+     ggtheme = theme_minimal(),
+     palette = cols[4:7])
+
+psurv3_v <- ggsurvplot(survfit(Surv(jail_time, censored) ~ victim_race_white, 
+                   data = survdata_victim), 
+     xlab = "Days in Jail", ylab = "Estimated Survival Probability",
+     legend.labs = c("Victim of color", "Race not reported", "White victim"),
+     legend.title = "",
+     legend = c(0.5, 0.5),
+     ylim = c(0, 1),
+     xlim = c(0, 365 * 10),
+     conf.int = T, censor = F,
+     ggtheme = theme_minimal(),
+     palette = cols)
+
+psurv3_v$plot
+
+logrank_test_victim <- survdiff(Surv(jail_time, censored) ~ victim_race_white, data = survdata_victim)
+logrank_p_victim <- glance(logrank_test_victim)$p.value[[1]]
+tidy_logrank_victim <- tidy(logrank_test_victim) %>%
+  mutate(calc_oe = ((obs - exp) ^ 2) / exp,
+         calc_oez = ((obs - exp) ^ 2 ) / diag(logrank_test$var),
+         victim_race_white = case_when(
+           victim_race_white == "Y" ~ "White",
+           victim_race_white == "N" ~ "Non-white",
+           TRUE ~ victim_race_white))
+```
+
+Our methodology for our secondary analysis of victim characteristics is identical to the one above, with the exception of the initial inclusion of victim race, victim sex, victim age, victim hispanic ethnicity and whether the victim was known by the individual as additional covariates. The victim white/non-white survival curves appear to demonstrate proportional hazard, and a log-rank test of these groups has p-value <0.001. Our interpretation goals remain oriented on survival times, not hazards, so we build AFT models to investigate. We find a log-normal AFT model to be the best fit when its hazard distribution is compared to a plot of the Kaplan-Meier residuals, and comparing AIC and BIC leads us to select victim race white/non-white as our method of encoding race. (See Appendix 3.)
+
+## 3. Results
+
+***3.1 Preliminary Analysis***
+
+```{r multinomial-model, include=F}
+prison_filt_multinom <- prison_filt %>%
+  mutate(race = fct_relevel(race, "White"))
+
+m1 <- multinom(jail_time_served ~ controlling_offense + arrested_during_status 
+                  + firearm_at_offense + alc_at_offense + drug_at_offense 
+                  + arrest_year_range + held_by + state 
+                  + age_at_arrest + race + sex + citizen + military + education + homeless_12mo_prior,
+               data = prison_filt_multinom)
+```
+
+**Table 1: Multinomial Logistic Model Output**
+
+```{r multinomial-results}
+tidy_multinom <- tidy(m1, exponentiate = FALSE) %>%
+  rowwise() %>%
+  mutate(term1 = str_split(term, "[:upper:]"),
+         term1 = term1[[1]],
+         term1 = str_to_title(str_replace_all(term1, "_", " ")),
+         term1 = str_remove(term1, "\\d+-\\d+$"),
+         term1 = str_remove(term1, "\\d+ To \\d+$"),
+         term1 = str_remove(term1, "\\d+ Or $"),
+         term2 = case_when(
+           str_detect(term, "[:lower:]\\d") ~ str_extract(term, "\\d.+"),
+           TRUE ~ str_extract(term, "[:upper:].*")),
+         term2 = str_replace(term2, "Y$", "Yes"),
+         term = ifelse(str_detect(term, "\\("), term, paste0(term1, ": ", term2)),
+         term = str_replace(term, "12mo", "in 12 Months")) %>%
+  select(-term1, -term2)
+
+tidy_multinom$p.value <- pvalue(tidy_multinom$p.value,
+                              accuracy = 0.001, 
+                              decimal.mark = ".",
+                              add_p = FALSE)
+
+tidy_multinom_sig <- tidy_multinom %>%
+  filter((str_detect(term, "Age at Arrest") | str_detect(term, "Race") | str_detect(term, "Sex")
+         | str_detect(term, "Citizen") | str_detect(term, "Military") 
+         | str_detect(term, "Education") | str_detect(term, "Homeless in 12 Months Prior")) &
+         p.value <= 0.05)
+
+kable_styling(kbl(tidy_multinom_sig, digits = c(3,3,3,3), 
+                    caption = NULL,
+                    col.names = c("Y Level", "Model Term", "Estimate", 
+                                  "Standard Error", "Test Statistic", "p-Value"),
+                    format = "latex",
+                    booktabs = T, longtable = T, linesep = ""),
+              latex_options = c("repeat_header"))
+```
+
+Only demographic-related covariates found to be significant at the 0.05 alpha level are displayed above (see Appendix 1 for full model output). Race only appears significant when comparing those who did not report whether they served jail time to those who did not serve jail time. Interestingly, holding all else constant, lack of citizenship and recent homelessness are associated with increased odds of serving jail time as compared to the baseline (U.S. citizenship and no recent homelessness). Education levels, again holding all else constant, appear to have some of the largest effect sizes when comparing those assigned jail time to those who were not detained pretrial. Also, we observe on average increased odds of not reporting jail time compared to serving no jail time for Indigenous individuals, holding all else constant.
+
+***3.2 Primary Analysis***
+
+**Table 2: AFT (log-normal) Model Output (With Race White/Non-white)**
+
+```{r primary-results}
+aft_ln3 <- survreg(Surv(jail_time, censored) ~ controlling_offense + arrested_during_status 
+                  + firearm_at_offense + alc_at_offense + drug_at_offense 
+                  + arrest_year_range + held_by + state 
+                  + age_at_arrest + race_white + sex + citizen + military + education + homeless_12mo_prior, 
+                  data = survdata, 
+                  dist = "lognormal")
+
+tidy_aft1 <- tidy(aft_ln3) %>%
+  rowwise() %>%
+  mutate(term1 = str_split(term, "[:upper:]"),
+         term1 = term1[[1]],
+         term1 = str_to_title(str_replace_all(term1, "_", " ")),
+         term1 = str_remove(term1, "\\d+-\\d+$"),
+         term1 = str_remove(term1, "\\d+ To \\d+$"),
+         term1 = str_remove(term1, "\\d+ Or $"),
+         term2 = case_when(
+           str_detect(term, "[:lower:]\\d") ~ str_extract(term, "\\d.+"),
+           TRUE ~ str_extract(term, "[:upper:].*")),
+         term2 = str_replace(term2, "Y$", "Yes"),
+         term = ifelse(str_detect(term, "\\("), term, paste0(term1, ": ", term2)),
+         term = str_replace(term, "12mo", "in 12 Months")) %>%
+  select(-term1, -term2)
+
+tidy_aft1$p.value <- pvalue(tidy_aft1$p.value,
+                              accuracy = 0.001, 
+                              decimal.mark = ".",
+                              add_p = FALSE)
+
+tidy_aft1_sig <- tidy_aft1 %>%
+  filter((str_detect(term, "Age at Arrest") | str_detect(term, "Race") | str_detect(term, "Sex")
+         | str_detect(term, "Citizen") | str_detect(term, "Military") 
+         | str_detect(term, "Education") | str_detect(term, "Homeless in 12 Months Prior")) &
+           p.value <= 0.05)
+
+kable_styling(kbl(tidy_aft1_sig, digits = c(3,3,3,3), 
+                    caption = NULL,
+                    col.names = c("Model Term", "Estimate", "Standard Error", "Test Statistic", "p-Value"),
+                    format = "latex",
+                    booktabs = T, longtable = T, linesep = ""),
+              latex_options = c("repeat_header"))
+```
+
+Again, only demographic-related covariates found to be significant at the 0.05 alpha level are displayed above (see Appendix 2 for full model output). As shown by the model output, certain values of age, race, sex, citizenship status, and education level are significant. Non-white race is the baseline for the model, so we can say that we expect white individuals to spend approximately 0.95 times fewer days in jail than individuals of color, holding all else constant. For the median non-zero jail time in the dataset, 243 days, a survival time multiplied by a factor of 0.95 would mean roughly 12 fewer days in jail. Thus, there is evidence that an individual's race is associated with the time they are detained pretrial.
+
+***3.3 Secondary Analysis***
+
+**Table 3: AFT (log-normal) Model Output (With Race and Victim Race White/Non-white)**
+
+```{r secondary-results}
+aft_ln3_v <- survreg(Surv(jail_time, censored) ~ controlling_offense + arrested_during_status 
+                  + firearm_at_offense + alc_at_offense + drug_at_offense 
+                  + arrest_year_range + held_by + state 
+                  + age_at_arrest + race_white + sex + citizen + military + education + homeless_12mo_prior
+                  + victim_race_white + victim_sex + victim_known + victim_hispanic + victim_age, 
+                  data = survdata_victim, 
+                  dist = "lognormal")
+
+tidy_aft2 <- tidy(aft_ln3_v) %>%
+  rowwise() %>%
+  mutate(term1 = str_split(term, "[:upper:]"),
+         term1 = term1[[1]],
+         term1 = str_to_title(str_replace_all(term1, "_", " ")),
+         term1 = str_remove(term1, "\\d+-\\d+$"),
+         term1 = str_remove(term1, "\\d+ To \\d+$"),
+         term1 = str_remove(term1, "\\d+ Or $"),
+         term2 = case_when(
+           str_detect(term, "[:lower:]\\d") ~ str_extract(term, "\\d.+"),
+           TRUE ~ str_extract(term, "[:upper:].*")),
+         term2 = str_replace(term2, "Y$", "Yes"),
+         term = ifelse(str_detect(term, "\\("), term, paste0(term1, ": ", term2)),
+         term = str_replace(term, "12mo", "in 12 Months")) %>%
+  select(-term1, -term2)
+
+tidy_aft2$p.value <- pvalue(tidy_aft2$p.value,
+                              accuracy = 0.001, 
+                              decimal.mark = ".",
+                              add_p = FALSE)
+
+tidy_aft2_sig <- tidy_aft2 %>%
+  filter((str_detect(term, "Age at Arrest") | str_detect(term, "Race") | str_detect(term, "Sex")
+         | str_detect(term, "Citizen") | str_detect(term, "Military") 
+         | str_detect(term, "Education") | str_detect(term, "Homeless in 12 Months Prior")
+         | str_detect(term, "Victim")) &
+           p.value <= 0.05)
+
+kable_styling(kbl(tidy_aft2_sig, digits = c(3,3,3,3), 
+                    caption = NULL,
+                    col.names = c("Model Term", "Estimate", "Standard Error", "Test Statistic", "p-Value"),
+                    format = "latex",
+                    booktabs = T, longtable = T, linesep = ""),
+              latex_options = c("repeat_header"))
+```
+
+See Appendix 3 for full model output -- the results shown above are again limited to significant demographic covariates. Only one level of victim age (under 12 years old) is significant when compared to the baseline (victim 12 to 18 years old). All other victim traits were not significant at the 0.05 alpha level. However, adding victim traits to the model did produce a different effect size for white race of incarcerated individual compared to non-white race. With this model, we can say that we expect white individuals to spend approximately 0.89 times fewer days in jail than individuals of color, holding all else constant. For the median non-zero jail time in the dataset, this multiplication of survival time would mean roughly 27 fewer days in jail.
+
+## 4. Discussion
+
+***4.1 Conclusions***
+
+We have examined the relationship between incarcerated individuals' race, the traits of their victims, and the length of time they were detained pretrial (as well as whether they were detained pretrial at all). Although we did not observe significant racial discrepancies between those detained and not detained in a preliminary multinomial logistic model, we did conclude that there is a slight negative association between white race (as compared to non-white race) and length of jail time in our primary and secondary analyses. Both survival models excluding and including victim traits confirmed the spirit of our primary hypothesis, although we sacrificed some racial granularity by grouping individuals into white and non-white groups during variable selection and cannot say specifically that Black, Hispanic and Indigenous individuals were detained for longer times pretrial. Although the effect size we found may not seem large, even a discrepancy of several days in jail a) affects the lives of the people in the system and b) serves as an important metric of racial inequality. This finding supports previous research on the ways racial bias is embedded in our criminal legal system.
+
+We did not find a significant effect of victim race and ethnicity on times spent in jail and fail to reject the null hypothesis in favor of our secondary alternate hypothesis where victim characteristics are concerned. When controlling for confounders, it does not appear that a victim's race is associated with the time the accused spends detained pretrial.
+
+Survival analysis allowed us to account for those individuals who reported that they had not yet been sentenced and were still being detained pre-trial, and using AFT models as opposed to proportional hazards models allowed us to measure the effect size of covariates on survival time (time in jail) instead of the hazard of release.
+
+***4.2 Limitations and Future Directions***
+
+In order to account for potentially important trends among data that was not reported (such as the increased odds of a failure to report jail time for Indigenous individuals in the data, holding all else constant, as we found in our preliminary analysis), all missing values, with the exception of length of jail time, were encoded as "Not Reported". Survey data is far from perfect and can contain a number of biases, including non-response bias, which may have affected our conclusions drawn. Court-reported pretrial detention lengths would be a more reliable source of outcome data for future exploration, but this data is not available in Durham County, North Carolina, much less nationally. As many other researchers have recommended, increased data collection around the experiences of individuals who come in contact with the courts will be essential in appraising and attempting to repair the broken, racially-biased mechanisms of our criminal legal system.
+
+Since the dataset was sufficiently large, we were able to conduct a complete-case analysis. This did reduce the sample size and lead to lower power; however, imputation of missing lengths of time spent in jail, perhaps via the Multiple Imputation via Chained Equations (MICE) algorithm, could be conducted to avoid sample size reduction in further study. Performing a complete-case analysis can also lead to biased parameter estimates under the Missing at Random (MAR) assumption. Though the missing length of jail time did not exactly align with the "Not Reported" category for whether jail time was served, the two groups were near one and the same. Covariates in our preliminary multinomial model output may be indicators of biased parameter estimates in the survival models that followed. Another opportunity for further expansion would be a sensitivity analysis considering the data with and without jail times greater than ten years (which we filtered out). We chose the covariates to include in our analyses based on prior research and interest, but potential multicollinearity may obscure their effects and a test of Spearman rank correlation coefficients for ordinal variables and chi-square test for nominal variables would serve as a beneficial way to evaluate and improve on our models [11].
+
+Our use of jail time as a proxy for pretrial detention relies on the assumption that people incarcerated in prisons spent their time in jail awaiting trial, after which they were sentenced and transferred to prisons. Further research into the validity of this assumption and the frequency of violations of the above protocol would do well to develop and add necessary nuance to our conclusions. Finally, frailty models and their ability to account for clustering by independent variables (e.g. state) without including those as factors in the model output promise another opportunity for further refinement.
+
+***4.3 Summary***
+
+As bail reform spreads slowly across a landscape of overworked district attorneys and public defenders, courts still struggling with a backlog of cases only exacerbated by time lost to months of COVID-19 closures, pretrial detention enmires hundreds of thousands of individuals in the United States. In some cases, people wait months or years before they are given the chance to argue their innocence to a judge. Many of those individuals are incarcerated prior to their trials or assigned secured bond, through which they may or may not be able to pay their way to freedom. The legal justification for pre-trial incarceration varies state by state, but in North Carolina, individuals have the right to release on written promise to appear unless a judge deems money bond necessary to prevent them from fleeing or to protect the community. In reality, despite regional reforms, money bond is more widespread than that high legal standard would allow, were it appropriately applied. The racial inequality in pretrial detention suggested by this study matters because it indicates that at least among those eventually convicted and serving time in prison, people of color spend longer in limbo before sentencing, where they are subject to the destabilizing effects of jail incarceration.
+
+\newpage
+
+## Appendix 
+
+***Appendix 1: Preliminary Multinomial Logistic Analysis***
+
+We assume the data in our multinomial logistic model are case specific, where each independent variable has a singular value for each case [12]. We also assume the outcome, whether jail time was served, is impossible to predict perfectly from the covariates for any case. Plots of binned residuals vs. predicted probabilities for each level of the outcome variable appeared evenly spread and values of the average residuals for each level of the categorical predictor variables also appeared normal.
+
+**Table 5: Full Multinomial Logistic Results**
+
+```{r full-multinom-results}
+tidy_multinom_full <- tidy_multinom %>%
+  select(-statistic)
+
+kable_styling(kbl(tidy_multinom_full, digits = c(3,3,3,3), 
+                    caption = "Multinomial Logistic Model Output",
+                    col.names = c("Y Level", "Model Term", "Estimate", 
+                                  "Standard Error", "p-Value"),
+                    format = "latex",
+                    booktabs = T, longtable = T),
+              latex_options = c("repeat_header"))
+```
+
+***Appendix 2: Primary Survival Analysis***
+
+**Figure 7: Additional Survival Curves for Race of Incarcerated Individual**
+
+```{r addtl-survival-curves}
+psurv1$plot | psurv2$plot
+```
+
+**Table 6: Log-rank Test for White/Non-white Incarcerated Individual**
+
+```{r log-rank-table}
+kable_styling(kable(tidy_logrank, digits = c(2, 2, 2, 2, 2), 
+                    caption = "Log-Rank Test Output",
+                    col.names = c("Race", "Number of Individuals", "Observed", "Expected", 
+                                  "(O-E)^2/E", "(O-E)^2/V")),
+              latex_options = "HOLD_position")
+```
+
+A log-rank test of jailtime by race white/non-white reveals a difference between the two groups, a powerful observation because we find empirical evidence of proportional hazard and further modeling confirms this discrepancy.
+
+**Figure 8: Kaplan-Meier Residual Plots of AFT Model Candidates**
+
+```{r all-aft-plots}
+par(mfrow=c(2,2))
+
+aft_ln <- survreg(Surv(jail_time, censored) ~ controlling_offense + arrested_during_status 
+                  + firearm_at_offense + alc_at_offense + drug_at_offense 
+                  + arrest_year_range + held_by + state 
+                  + age_at_arrest + race + sex + citizen + military + education + homeless_12mo_prior, 
+                  data = survdata, 
+                  dist = "lognormal")
+
+aft_ln2 <- survreg(Surv(jail_time, censored) ~ controlling_offense + arrested_during_status 
+                  + firearm_at_offense + alc_at_offense + drug_at_offense 
+                  + arrest_year_range + held_by + state 
+                  + age_at_arrest + race_black + sex + citizen + military + education + homeless_12mo_prior, 
+                  data = survdata, 
+                  dist = "lognormal")
+
+aft_ln3 <- survreg(Surv(jail_time, censored) ~ controlling_offense + arrested_during_status 
+                  + firearm_at_offense + alc_at_offense + drug_at_offense 
+                  + arrest_year_range + held_by + state 
+                  + age_at_arrest + race_white + sex + citizen + military + education + homeless_12mo_prior, 
+                  data = survdata, 
+                  dist = "lognormal")
+
+aft_e <- survreg(Surv(jail_time, censored) ~ controlling_offense + arrested_during_status 
+                  + firearm_at_offense + alc_at_offense + drug_at_offense 
+                  + arrest_year_range + held_by + state 
+                  + age_at_arrest + race + sex + citizen + military + education + homeless_12mo_prior, 
+                  data = survdata,  
+                 dist = "exponential")
+
+aft_w <- survreg(Surv(jail_time, censored) ~ controlling_offense + arrested_during_status 
+                  + firearm_at_offense + alc_at_offense + drug_at_offense 
+                  + arrest_year_range + held_by + state 
+                  + age_at_arrest + race + sex + citizen + military + education + homeless_12mo_prior, 
+                  data = survdata, 
+                 dist = "weibull")
+
+aft_l <- survreg(Surv(jail_time, censored) ~ controlling_offense + arrested_during_status 
+                  + firearm_at_offense + alc_at_offense + drug_at_offense 
+                  + arrest_year_range + held_by + state 
+                  + age_at_arrest + race + sex + citizen + military + education + homeless_12mo_prior, 
+                  data = survdata, 
+                 dist = "loglogistic")
+
+resids <- (log(survdata$jail_time) - aft_ln$linear.predictors) / (aft_ln$scale)
+m1 <- survfit(Surv(resids, censored) ~ 1, data = survdata)
+plot(m1, xlab = "AFT Residuals", 
+     ylab = "Survival Probability", 
+     main = "Log-Normal Model")
+exp.x <- seq(min(resids), max(resids), length = 100)
+exp.y <- pnorm(exp.x, lower.tail = F)
+lines(exp.x, exp.y, col = "red", lwd = 2)
+
+resids <- (log(survdata$jail_time) - aft_e$linear.predictors) / (aft_e$scale)
+plot(m1, xlab = "AFT Residuals", 
+     ylab = "Survival Probability", 
+     main = "Exponential Model")
+exp.y <- exp(-exp(exp.x))
+lines(exp.x, exp.y, col = "red", lwd = 2)
+
+resids <- (log(survdata$jail_time) - aft_w$linear.predictors) / (aft_w$scale)
+plot(m1, xlab = "AFT Residuals", 
+     ylab = "Survival Probability", 
+     main = "Weibull Model")
+exp.y <- exp(-exp(exp.x))
+lines(exp.x, exp.y, col = "red", lwd = 2)
+
+resids <- (log(survdata$jail_time) - aft_l$linear.predictors) / (aft_l$scale)
+plot(m1, xlab = "AFT Residuals", 
+     ylab = "Survival Probability", 
+     main = "Logistic Model")
+exp.y <- plogis(exp.x, lower.tail = F)
+lines(exp.x, exp.y, col = "red", lwd = 2)
+```
+
+We assume predictors have a multiplicative effect on survival time, and a KM residual plot for the log-normal AFT model shows this is satisfied. The fit is not perfect, but a log-normal model outperforms the other models evaluated above.
+
+**Table 7: Race Variable Selection**
+
+```{r aic-bic}
+AIC <- c(AIC(aft_ln), AIC(aft_ln2), AIC(aft_ln3))
+BIC <- c(BIC(aft_ln), BIC(aft_ln2), BIC(aft_ln3))
+
+var_select <- as.data.frame(t(tibble(AIC, BIC)))
+
+kable(var_select, digits = c(1, 1, 1, 1, 1), 
+      caption = "AIC and BIC for Log-normal AFT Models by Race Encoding Method",
+      col.names = c("Race complete", "Race Black/non-Black", "Race white/non-white")) %>%
+  kable_styling(latex_options = "HOLD_position")
+```
+
+Variable selection among AFT log-normal models with different race encoding methods was performed as discussed in methodology, via AIC and BIC.
+
+**Table 8: Full Primary Survival Anaylsis Results**
+
+```{r full-primary-results}
+kable_styling(kbl(tidy_aft1, digits = c(3,3,3,3), 
+                    caption = "AFT (log-normal) Model Output (with race white/non-white)",
+                    col.names = c("Model Term", "Estimate", "Standard Error", "Test Statistic", "p-Value"),
+                    format = "latex",
+                    booktabs = T, longtable = T),
+              latex_options = c("repeat_header"))
+```
+
+***Appendix 3: Secondary Survival Analysis (Victim Traits)***
+
+**Figure 9: Additional Survival Curves for Race of Victim**
+
+```{r addtl-survival-curves-victim}
+psurv1_v$plot | psurv2_v$plot
+```
+
+**Table 9: Log-rank Test for White/Non-white Victim**
+
+```{r log-rank-table-victim}
+kable_styling(kable(tidy_logrank_victim, digits = c(2, 2, 2, 2, 2), 
+                    caption = "Log-Rank Test Output",
+                    col.names = c("Victim Race", "Number of Individuals", "Observed", "Expected", 
+                                  "(O-E)^2/E", "(O-E)^2/V")),
+              latex_options = "HOLD_position")
+```
+
+A log-rank test of jail time by victim race white/non-white reveals a difference between the two groups, however, this is contradicted by later modeling with additional confounders.
+
+**Figure 10: Kaplan-Meier Residual Plots of AFT Model Candidates**
+
+```{r all-aft-plots-victim}
+par(mfrow=c(2,2))
+
+aft_ln <- survreg(Surv(jail_time, censored) ~ controlling_offense + arrested_during_status 
+                  + firearm_at_offense + alc_at_offense + drug_at_offense 
+                  + arrest_year_range + held_by + state 
+                  + age_at_arrest + race_white + sex + citizen + military + education + homeless_12mo_prior
+                  + victim_race + victim_sex + victim_known + victim_hispanic + victim_age, 
+                  data = survdata_victim, 
+                  dist = "lognormal")
+
+aft_ln2 <- survreg(Surv(jail_time, censored) ~ controlling_offense + arrested_during_status 
+                  + firearm_at_offense + alc_at_offense + drug_at_offense 
+                  + arrest_year_range + held_by + state 
+                  + age_at_arrest + race_white + sex + citizen + military + education + homeless_12mo_prior
+                  + victim_race_black + victim_sex + victim_known + victim_hispanic + victim_age, 
+                  data = survdata_victim, 
+                  dist = "lognormal")
+
+aft_ln3 <- survreg(Surv(jail_time, censored) ~ controlling_offense + arrested_during_status 
+                  + firearm_at_offense + alc_at_offense + drug_at_offense 
+                  + arrest_year_range + held_by + state 
+                  + age_at_arrest + race_white + sex + citizen + military + education + homeless_12mo_prior
+                  + victim_race_white + victim_sex + victim_known + victim_hispanic + victim_age, 
+                  data = survdata_victim, 
+                  dist = "lognormal")
+
+aft_e <- survreg(Surv(jail_time, censored) ~ controlling_offense + arrested_during_status 
+                  + firearm_at_offense + alc_at_offense + drug_at_offense 
+                  + arrest_year_range + held_by + state 
+                  + age_at_arrest + race + sex + citizen + military + education + homeless_12mo_prior
+                  + victim_race + victim_sex + victim_known + victim_hispanic + victim_age, 
+                  data = survdata_victim,  
+                 dist = "exponential")
+
+aft_w <- survreg(Surv(jail_time, censored) ~ controlling_offense + arrested_during_status 
+                  + firearm_at_offense + alc_at_offense + drug_at_offense 
+                  + arrest_year_range + held_by + state 
+                  + age_at_arrest + race + sex + citizen + military + education + homeless_12mo_prior
+                  + victim_race + victim_sex + victim_known + victim_hispanic + victim_age, 
+                  data = survdata_victim, 
+                 dist = "weibull")
+
+aft_l <- survreg(Surv(jail_time, censored) ~ controlling_offense + arrested_during_status 
+                  + firearm_at_offense + alc_at_offense + drug_at_offense 
+                  + arrest_year_range + held_by + state 
+                  + age_at_arrest + race + sex + citizen + military + education + homeless_12mo_prior
+                  + victim_race + victim_sex + victim_known + victim_hispanic + victim_age, 
+                  data = survdata_victim, 
+                 dist = "loglogistic")
+
+resids <- (log(survdata_victim$jail_time) - aft_ln$linear.predictors) / (aft_ln$scale)
+m1 <- survfit(Surv(resids, censored) ~ 1, data = survdata_victim)
+plot(m1, xlab = "AFT Residuals", 
+     ylab = "Survival Probability", 
+     main = "Log-Normal Model")
+exp.x <- seq(min(resids), max(resids), length = 100)
+exp.y <- pnorm(exp.x, lower.tail = F)
+lines(exp.x, exp.y, col = "red", lwd = 2)
+
+resids <- (log(survdata_victim$jail_time) - aft_e$linear.predictors) / (aft_e$scale)
+plot(m1, xlab = "AFT Residuals", 
+     ylab = "Survival Probability", 
+     main = "Exponential Model")
+exp.y <- exp(-exp(exp.x))
+lines(exp.x, exp.y, col = "red", lwd = 2)
+
+resids <- (log(survdata_victim$jail_time) - aft_w$linear.predictors) / (aft_w$scale)
+plot(m1, xlab = "AFT Residuals", 
+     ylab = "Survival Probability", 
+     main = "Weibull Model")
+exp.y <- exp(-exp(exp.x))
+lines(exp.x, exp.y, col = "red", lwd = 2)
+
+resids <- (log(survdata_victim$jail_time) - aft_l$linear.predictors) / (aft_l$scale)
+plot(m1, xlab = "AFT Residuals", 
+     ylab = "Survival Probability", 
+     main = "Logistic Model")
+exp.y <- plogis(exp.x, lower.tail = F)
+lines(exp.x, exp.y, col = "red", lwd = 2)
+```
+
+We assume predictors have a multiplicative effect on survival time, and a KM residual plot for the log-normal AFT model shows this is satisfied. The fit is not perfect, but a log-normal model outperforms the other models evaluated above.
+
+**Table 10: Race Variable Selection**
+
+```{r aic-bic-victim}
+AIC <- c(AIC(aft_ln), AIC(aft_ln2), AIC(aft_ln3))
+BIC <- c(BIC(aft_ln), BIC(aft_ln2), BIC(aft_ln3))
+
+var_select <- as.data.frame(t(tibble(AIC, BIC)))
+
+kable(var_select, digits = c(1, 1, 1, 1, 1), 
+      caption = "AIC and BIC for Log-normal AFT Models Including Victim Traits by Race Encoding Method",
+      col.names = c("Race complete", "Race Black/non-Black", "Race white/non-white")) %>%
+  kable_styling(latex_options = "HOLD_position")
+```
+
+Variable selection among AFT log-normal models with different race encoding methods was performed as discussed in methodology, via AIC and BIC.
+
+**Table 11: Full Primary Survival Anaylsis Results**
+
+```{r full-secondary-results}
+kable_styling(kbl(tidy_aft2, digits = c(3,3,3,3), 
+                    caption = "AFT (log-normal) Model Output (with race and victim race white/non-white)",
+                    col.names = c("Model Term", "Estimate", "Standard Error", "Test Statistic", "p-Value"),
+                    format = "latex",
+                    booktabs = T, longtable = T),
+              latex_options = c("repeat_header"))
+```
+
+\newpage
+
+## References
+
+[1] “United States of America.” United States of America Overview. World Prison Brief, December 2019. https://www.prisonstudies.org/country/united-states-america.
+
+[2] “Pretrial Detention.” Prison Policy Initiative. Accessed December 8, 2021. https://www.prisonpolicy.org/research/pretrial_detention/. 
+
+[3] Lowenkamp, Christopher T., Alexander M. Holsinger, and Marie VanNostrand. “Investigating the Impact of Pretrial Detention on Sentencing Outcomes.” National Institute of Corrections, January 5, 2021. https://nicic.gov/investigating-impact-pretrial-detention-sentencing-outcomes. 
+
+[4] Digard, Léon, and Elizabeth Swavola. “Justice Denied: The Harmful and Lasting Effects of Pretrial Detention.” Vera Evidence Brief. Vera Institute of Justice, April 2019. https://www.vera.org/downloads/publications/Justice-Denied-Evidence-Brief.pdf. 
+
+[5] Sawyer, Wendy. “How Race Impacts Who Is Detained Pretrial.” Prison Policy Initiative, October 9, 2019. https://www.prisonpolicy.org/blog/2019/10/09/pretrial_race/. 
+
+[6] Kovaleski, Serge F. “Justice Delayed: 10 Years in Jail, but Still Awaiting Trial.” The New York Times, September 19, 2017. https://www.nytimes.com/2017/09/19/us/alabama-kharon-davis-speedy.html. 
+
+[7] Crozier, William, Brandon L. Garrett, and Arvind Krishnamurthy. “The Transparency Of Jail Data.” SSRN, January 24, 2021. https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3741638. 
+
+[8] United States Bureau of Justice Statistics. “Survey of Prison Inmates, United States, 2016.” Survey of Prison Inmates, United States, 2016. Inter-university Consortium for Political and Social Research, September 15, 2021. https://www.icpsr.umich.edu/web/NACJD/studies/37692. 
+
+[9] Stevenson, Bryan. Just Mercy: A Story of Justice and Redemption. Spiegel & Grau, 2014. 
+
+[10] “What Changed after D.C. Ended Cash Bail.” NPR, September 2, 2018. https://www.npr.org/2018/09/02/644085158/what-changed-after-d-c-ended-cash-bail. 
+
+[11] Bhalla, Deepanshu. “Detecting Multicollinearity in Categorical Variables.” ListenData. Accessed December 8, 2021. https://www.listendata.com/2015/04/detecting-multicollinearity-in-categorical-variables.html. 
+
+[12] “Multinomial Logistic Regression.” Wikipedia. Wikimedia Foundation, August 23, 2021. https://en.wikipedia.org/wiki/Multinomial_logistic_regression#.
