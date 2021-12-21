@@ -36,7 +36,7 @@ cols <- brewer.pal(8, "Accent")
 
 ## Waiting for Trial: A Case Study of Detention Times Prior to Sentencing
 
-### Abstract
+***Abstract***
 
 In the United States, hundreds of thousands of people are currently detained pretrial. Pretrial detention is destabilizing and associated with higher odds of conviction and harsher sentences.The Bureau of Justice Statistics' 2016 Survey of Prison Inmates asked incarcerated people how long they were held in jails before transfer to prison (which typically occurs after sentencing). We conduct survival analysis of this data to determine whether a person's race is associated with the length of time they were detained in jail. Also, motivated by a history of inequal legal treatment of crimes against white women versus women of color, for people accused of violent crimes, we examine whether the victim's race is associated with jail time. We find that, holding factors such as the nature of the primary offense, other demographic descriptions, and prosecution policy-related variables constant, we expect white individuals to spend fewer days in jail than individuals of color.
 
@@ -253,6 +253,8 @@ survdata_victim <- survdata %>%
   filter(controlling_offense_type == "Violent")
 ```
 
+We plot survival curves for the data from a non-parametric Kaplan-Meier estimate. When racial categories are simplified to white and non-white, as shown in Figure 4, the curves for different groups do not cross. They also remain roughly parallel at most survival times. This provides empirical evidence of proportional hazard and establishes the power of a log-rank test as a method to compare groups. Such a test of survival times for white incarcerated individuals, non-white individuals, and those who did not report their race has significant p-value <0.001. (See Appendix 2 for survival curves for disaggregated racial groups and full log-rank test results.) We will further explore this racial discrepancy with a survival model.
+
 ```{r survival-curve, fig.height=3}
 psurv1 <- ggsurvplot(survfit(Surv(jail_time, censored) ~ race, 
                    data = survdata[survdata$race %in% c("White", "Black", "Hispanic", "Other"), ]), 
@@ -307,8 +309,6 @@ tidy_logrank <- tidy(logrank_test) %>%
            race_white == "N" ~ "Non-white",
            TRUE ~ race_white))
 ```
-
-We plot survival curves for the data from a non-parametric Kaplan-Meier estimate. When racial categories are simplified to white and non-white, as shown in Figure 4, the curves for different groups do not cross. They also remain roughly parallel at most survival times. This provides empirical evidence of proportional hazard and establishes the power of a log-rank test as a method to compare groups. Such a test of survival times for white incarcerated individuals, non-white individuals, and those who did not report their race has significant p-value <0.001. (See Appendix 2 for survival curves for disaggregated racial groups and full log-rank test results.) We will further explore this racial discrepancy with a survival model.
 
 To further examine the scale of this difference and incorporate confounders, we built an accelerated failure time (AFT) model with error term $\epsilon_i$ normally distributed and survival time $T_i$ log-normally distributed, specified as follows: $$ \log(T_i) = \beta_0 + \beta_1x_{1i} + \beta_2x_{2i} + ... + \epsilon_i $$
 
@@ -558,42 +558,40 @@ Our use of jail time as a proxy for pretrial detention relies on the assumption 
 
 As bail reform spreads slowly across a landscape of overworked district attorneys and public defenders, courts still struggling with a backlog of cases only exacerbated by time lost to months of COVID-19 closures, pretrial detention enmires hundreds of thousands of individuals in the United States. In some cases, people wait months or years before they are given the chance to argue their innocence to a judge. Many of those individuals are incarcerated prior to their trials or assigned secured bond, through which they may or may not be able to pay their way to freedom. The legal justification for pre-trial incarceration varies state by state, but in North Carolina, individuals have the right to release on written promise to appear unless a judge deems money bond necessary to prevent them from fleeing or to protect the community. In reality, despite regional reforms, money bond is more widespread than that high legal standard would allow, were it appropriately applied. The racial inequality in pretrial detention suggested by this study matters because it indicates that at least among those eventually convicted and serving time in prison, people of color spend longer in limbo before sentencing, where they are subject to the destabilizing effects of jail incarceration.
 
-\newpage
-
 ## Appendix 
 
 ***Appendix 1: Preliminary Multinomial Logistic Analysis***
 
 We assume the data in our multinomial logistic model are case specific, where each independent variable has a singular value for each case [12]. We also assume the outcome, whether jail time was served, is impossible to predict perfectly from the covariates for any case. Plots of binned residuals vs. predicted probabilities for each level of the outcome variable appeared evenly spread and values of the average residuals for each level of the categorical predictor variables also appeared normal.
 
-**Table 5: Full Multinomial Logistic Results**
+**Table 4: Full Multinomial Logistic Results**
 
 ```{r full-multinom-results}
 tidy_multinom_full <- tidy_multinom %>%
   select(-statistic)
 
 kable_styling(kbl(tidy_multinom_full, digits = c(3,3,3,3), 
-                    caption = "Multinomial Logistic Model Output",
+                    caption = NULL,
                     col.names = c("Y Level", "Model Term", "Estimate", 
                                   "Standard Error", "p-Value"),
                     format = "latex",
-                    booktabs = T, longtable = T),
+                    booktabs = T, longtable = T, linesep = ""),
               latex_options = c("repeat_header"))
 ```
 
 ***Appendix 2: Primary Survival Analysis***
 
-**Figure 7: Additional Survival Curves for Race of Incarcerated Individual**
+**Figure 6: Additional Survival Curves for Race of Incarcerated Individual**
 
-```{r addtl-survival-curves}
+```{r addtl-survival-curves, fig.height=2.5}
 psurv1$plot | psurv2$plot
 ```
 
-**Table 6: Log-rank Test for White/Non-white Incarcerated Individual**
+**Table 5: Log-rank Test for White/Non-white Incarcerated Individual**
 
 ```{r log-rank-table}
 kable_styling(kable(tidy_logrank, digits = c(2, 2, 2, 2, 2), 
-                    caption = "Log-Rank Test Output",
+                    caption = NULL,
                     col.names = c("Race", "Number of Individuals", "Observed", "Expected", 
                                   "(O-E)^2/E", "(O-E)^2/V")),
               latex_options = "HOLD_position")
@@ -601,7 +599,7 @@ kable_styling(kable(tidy_logrank, digits = c(2, 2, 2, 2, 2),
 
 A log-rank test of jailtime by race white/non-white reveals a difference between the two groups, a powerful observation because we find empirical evidence of proportional hazard and further modeling confirms this discrepancy.
 
-**Figure 8: Kaplan-Meier Residual Plots of AFT Model Candidates**
+**Figure 7: Kaplan-Meier Residual Plots of AFT Model Candidates**
 
 ```{r all-aft-plots}
 par(mfrow=c(2,2))
@@ -681,7 +679,7 @@ lines(exp.x, exp.y, col = "red", lwd = 2)
 
 We assume predictors have a multiplicative effect on survival time, and a KM residual plot for the log-normal AFT model shows this is satisfied. The fit is not perfect, but a log-normal model outperforms the other models evaluated above.
 
-**Table 7: Race Variable Selection**
+**Table 6: AIC and BIC for Log-normal AFT Models by Race Encoding Method**
 
 ```{r aic-bic}
 AIC <- c(AIC(aft_ln), AIC(aft_ln2), AIC(aft_ln3))
@@ -690,33 +688,31 @@ BIC <- c(BIC(aft_ln), BIC(aft_ln2), BIC(aft_ln3))
 var_select <- as.data.frame(t(tibble(AIC, BIC)))
 
 kable(var_select, digits = c(1, 1, 1, 1, 1), 
-      caption = "AIC and BIC for Log-normal AFT Models by Race Encoding Method",
+      caption = NULL,
       col.names = c("Race complete", "Race Black/non-Black", "Race white/non-white")) %>%
   kable_styling(latex_options = "HOLD_position")
 ```
 
-Variable selection among AFT log-normal models with different race encoding methods was performed as discussed in methodology, via AIC and BIC.
-
-**Table 8: Full Primary Survival Anaylsis Results**
+**Table 7: Full Primary Survival Analysis Results**
 
 ```{r full-primary-results}
 kable_styling(kbl(tidy_aft1, digits = c(3,3,3,3), 
-                    caption = "AFT (log-normal) Model Output (with race white/non-white)",
+                    caption = NULL,
                     col.names = c("Model Term", "Estimate", "Standard Error", "Test Statistic", "p-Value"),
                     format = "latex",
-                    booktabs = T, longtable = T),
+                    booktabs = T, longtable = T, linesep = ""),
               latex_options = c("repeat_header"))
 ```
 
 ***Appendix 3: Secondary Survival Analysis (Victim Traits)***
 
-**Figure 9: Additional Survival Curves for Race of Victim**
+**Figure 8: Additional Survival Curves for Race of Victim**
 
-```{r addtl-survival-curves-victim}
+```{r addtl-survival-curves-victim, fig.height=2.5}
 psurv1_v$plot | psurv2_v$plot
 ```
 
-**Table 9: Log-rank Test for White/Non-white Victim**
+**Table 8: Log-rank Test for White/Non-white Victim**
 
 ```{r log-rank-table-victim}
 kable_styling(kable(tidy_logrank_victim, digits = c(2, 2, 2, 2, 2), 
@@ -728,7 +724,7 @@ kable_styling(kable(tidy_logrank_victim, digits = c(2, 2, 2, 2, 2),
 
 A log-rank test of jail time by victim race white/non-white reveals a difference between the two groups, however, this is contradicted by later modeling with additional confounders.
 
-**Figure 10: Kaplan-Meier Residual Plots of AFT Model Candidates**
+**Figure 9: Kaplan-Meier Residual Plots of AFT Model Candidates**
 
 ```{r all-aft-plots-victim}
 par(mfrow=c(2,2))
@@ -814,7 +810,7 @@ lines(exp.x, exp.y, col = "red", lwd = 2)
 
 We assume predictors have a multiplicative effect on survival time, and a KM residual plot for the log-normal AFT model shows this is satisfied. The fit is not perfect, but a log-normal model outperforms the other models evaluated above.
 
-**Table 10: Race Variable Selection**
+**Table 9: AIC and BIC for Log-normal AFT Models Including Victim Traits by Race Encoding Method**
 
 ```{r aic-bic-victim}
 AIC <- c(AIC(aft_ln), AIC(aft_ln2), AIC(aft_ln3))
@@ -823,21 +819,19 @@ BIC <- c(BIC(aft_ln), BIC(aft_ln2), BIC(aft_ln3))
 var_select <- as.data.frame(t(tibble(AIC, BIC)))
 
 kable(var_select, digits = c(1, 1, 1, 1, 1), 
-      caption = "AIC and BIC for Log-normal AFT Models Including Victim Traits by Race Encoding Method",
+      caption = NULL,
       col.names = c("Race complete", "Race Black/non-Black", "Race white/non-white")) %>%
   kable_styling(latex_options = "HOLD_position")
 ```
 
-Variable selection among AFT log-normal models with different race encoding methods was performed as discussed in methodology, via AIC and BIC.
-
-**Table 11: Full Primary Survival Anaylsis Results**
+**Table 10: Full Primary Survival Analysis Results**
 
 ```{r full-secondary-results}
 kable_styling(kbl(tidy_aft2, digits = c(3,3,3,3), 
-                    caption = "AFT (log-normal) Model Output (with race and victim race white/non-white)",
+                    caption = NULL,
                     col.names = c("Model Term", "Estimate", "Standard Error", "Test Statistic", "p-Value"),
                     format = "latex",
-                    booktabs = T, longtable = T),
+                    booktabs = T, longtable = T, linesep = ""),
               latex_options = c("repeat_header"))
 ```
 
